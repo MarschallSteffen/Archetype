@@ -140,10 +140,9 @@ export function showConnectionPopover(
     })
   })
 
-  // Flip button
+  // Flip button — keep popover open after flip
   popover.querySelector('.conn-flip-btn')?.addEventListener('click', () => {
     onFlip?.()
-    dismiss()
   })
 
   // Multiplicity changes

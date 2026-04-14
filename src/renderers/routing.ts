@@ -68,7 +68,7 @@ function stub(rect: Rect, side: PortSide, frac = 0.5): Pt {
  *     L-shape (2 turns via midpoint crossbar) when target is in front.
  *     Outer U-shape when target is behind source.
  *   Same direction (e→e, n→n, …):
- *     S/Z-shape (2 turns), crossbar cleared past the farther element.
+ *     Z-shape (2 turns), crossbar cleared past the farther element at source level.
  */
 function innerWaypoints(
   sx: number, sy: number, sp: PortSide,   // src stub endpoint + exit dir
@@ -146,22 +146,21 @@ function innerWaypoints(
   }
 
   // ── Same-direction exits (e→e, w→w, n→n, s→s) ───────────────────────────
-  // S/Z-shape: route around the farther element, two turns.
+  // Z-shape: exit to the outer rail at the source level, then travel to the
+  // target column/row, then approach the target. Always two right-angle turns.
   if (sp === tp) {
     if (sdy === 0) {
-      // Both horizontal
+      // Both horizontal — outer rail is a vertical segment at outerX
       const outerX = sdx > 0
         ? snap(Math.max(srcRect.x + srcRect.w, tgtRect.x + tgtRect.w) + MARGIN)
         : snap(Math.min(srcRect.x, tgtRect.x) - MARGIN)
-      const my = snap((sy + ty) / 2)
-      return [[outerX, snap(sy)], [outerX, my], [snap(tx), my]]
+      return [[outerX, snap(sy)], [outerX, snap(ty)], [snap(tx), snap(ty)]]
     } else {
-      // Both vertical
+      // Both vertical — outer rail is a horizontal segment at outerY
       const outerY = sdy > 0
         ? snap(Math.max(srcRect.y + srcRect.h, tgtRect.y + tgtRect.h) + MARGIN)
         : snap(Math.min(srcRect.y, tgtRect.y) - MARGIN)
-      const mx = snap((sx + tx) / 2)
-      return [[snap(sx), outerY], [mx, outerY], [mx, snap(ty)]]
+      return [[snap(sx), outerY], [snap(tx), outerY], [snap(tx), snap(ty)]]
     }
   }
 
@@ -176,11 +175,11 @@ function innerWaypoints(
  *
  * Visual quality tiers (turn cost):
  *   0 — I-shape: perfectly straight, no turns
- *   1 — L-shape OR S-shape (opposing, target in front): one visual bend
- *   2 — S/Z same-direction: two turns around the farther element
+ *   1 — L-shape OR opposing-forward (both 1 visual bend)
+ *   2 — Z same-direction: two turns around the farther element
  *   + large penalties for backward paths that require going behind elements
  *
- * Opposing-forward (S-shape) scores the same as L (both = 1 visual bend).
+ * Opposing-forward scores the same as L (both = 1 visual bend).
  * Path length breaks ties so the shorter route wins — a short S beats a long L.
  */
 function routeScore(src: Rect, sp: PortSide, tgt: Rect, tp: PortSide): number {
@@ -212,7 +211,7 @@ function routeScore(src: Rect, sp: PortSide, tgt: Rect, tp: PortSide): number {
       backwardPenalty = 4000
     }
   } else if (sp === tp) {
-    // Same-direction (e→e, n→n …) — S/Z around the farther element
+    // Same-direction (e→e, n→n …) — Z-shape around the farther element
     turns = 2
     backwardPenalty = 500
   } else {

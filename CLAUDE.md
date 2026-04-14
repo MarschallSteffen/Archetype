@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Connections are always auto-routed** via `bestPortPair` in `routing.ts` — stored ports are updated on every `refreshConnections` call. Never hardcode port sides in connection logic.
 - **`refreshConnections` always passes the fresh `conn` object** from `store.state` directly to `r.updatePoints(...)` as the last argument. Never rely on `this.conn` inside the renderer being up-to-date at call time — there is a race between renderer store subscriptions and the main store listener.
 - **Persistence is JSON** — `saveDiagram` writes the full `Diagram` object as `JSON.stringify`. Do not add Mermaid as a persistence path; it is export-only.
-- **Storage connection normalization** — `refreshConnections` always passes class end as `x1/y1` and storage end as `x2/y2`. Arrow semantics in `ConnectionRenderer` depend on this: `read` → `marker-start` at x1 (arrow points at class); `write` → `marker-start` at x1; `read-write` → two curved opposing arrows via `curvedArrowPath`.
+- **Storage connection direction** — source/target order is canonical for all connection types, including storage. `read` and `write` both use `marker-end` only (arrow at target end); direction is determined by which element is source vs target. Use the flip button to reverse. No normalization swap in `refreshConnections` — storage is treated identically to class connections.
 - **Element kind types are defined once** in `src/types.ts` (`ElementKind`, `SelectableKind`). Import from there — never re-declare locally.
 - **Element CRUD follows a uniform pattern** in `DiagramStore`. Use `store.findElementById(kind, id)` and `store.updateElementPosition(kind, id, patch)` in controllers instead of parallel if-else chains over entity collections.
 - **Wire functions in main.ts** use the generic `wireElementInteraction()` helper. Only class has special behaviour (no vertical resize, member editing). All other element types delegate entirely to the helper.
@@ -91,11 +91,17 @@ All positionable entities use `Point` (`{x,y}`) and `Size` (`{w,h}`) from `UmlCl
 Each renderer owns the SVG `<g>` for one entity instance. Creates on mount, patches on update (no full re-render). Subscribes to store events for self-updates.
 
 - `svgUtils.ts` — **shared utilities**: `svgEl`, `renderPortsInto`, `updatePortPositions`, `renderShadow`. All renderers import from here.
-- `routing.ts` — `bestPortPair(srcRect, tgtRect)` + `orthogonalPath(x1,y1,sp, x2,y2,tp)` — strictly axis-aligned elbow routing with rounded Q-bezier corners.
+- `routing.ts` — `bestPortPair(srcRect, tgtRect)` + `orthogonalPath(x1,y1,sp, x2,y2,tp)` — strictly axis-aligned elbow routing with rounded Q-bezier corners. Shape rules: **L-shape** for orthogonal exits with forward corner; **U-shape** (midpoint crossbar) for opposing ports; **Z-shape** (never S) for same-direction exits — crossbar exits at source level, travels full span to target level, then enters target. Stub junctions (indices 1 and last-1 in the point chain) are always sharp `L` commands so arrowheads arrive perpendicular.
 - `ports.ts` — `PORT_SIDES`, `portPosition(side,w,h)`, `absolutePortPosition(...)`
 - `ConnectionRenderer.ts` — renders connection lines; `updatePoints` takes a fresh `conn` as 7th argument (passed from `refreshConnections`)
 
 Connection ports are rendered as small circles (via `renderPortsInto`), visible on element hover.
+
+#### `refreshConnections` — three-pass algorithm
+
+1. **Port-pair selection** — calls `bestPortPair(srcRect, tgtRect)` for every connection to determine which port sides to use.
+2. **Slot (frac) assignment** — for each element side that has multiple connections, assigns evenly-spaced `frac` values (0.0–1.0 along the port side) sorted by the peer element's center position: e/w ports sort peers by Y center (top-to-bottom); n/s ports sort peers by X center (left-to-right). This ensures the connection order on each side mirrors the spatial order of the peer elements.
+3. **Render** — calls `r.updatePoints(x1, y1, srcPort, x2, y2, tgtPort, offset, srcRect, tgtRect, freshConn)` for each connection using the computed frac-adjusted port positions.
 
 ---
 
@@ -129,7 +135,7 @@ Key helpers (used by controllers to avoid if-else chains over entity kind):
 
 ### Connection Popover (`src/ui/ConnectionPopover.ts`)
 
-Non-modal floating panel. Appears after connection drag or on click of existing arrow. Changes apply live on every `change` event — no confirm button. Dismisses on outside click or Escape.
+Non-modal floating panel. Appears after connection drag or on click of existing arrow. Changes apply live on every `change` event — no confirm button. Dismisses on outside click or Escape. **Flip button does not dismiss the popover** — it swaps source ↔ target in the store and leaves the popover open.
 
 - For storage connections: only shows `read | write | read-write`
 - For actor/queue connections: only shows `request`

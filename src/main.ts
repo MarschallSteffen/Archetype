@@ -343,8 +343,14 @@ function wireElementInteraction(
       }
     }
     e.stopPropagation()
-    selection.select({ kind, id }, e.shiftKey)
-    drag.startDrag({ kind, id }, e, selection.items)
+    // If the element is already part of a multi-selection and shift is not held,
+    // don't re-select (which would collapse to single) — just start the drag.
+    if (!e.shiftKey && selection.isSelected(id) && selection.items.length > 1) {
+      drag.startDrag({ kind, id }, e, selection.items)
+    } else {
+      selection.select({ kind, id }, e.shiftKey)
+      drag.startDrag({ kind, id }, e, selection.items)
+    }
   })
 
   el.addEventListener('dblclick', e => {
@@ -493,17 +499,10 @@ function refreshConnections() {
     const srcSize = getRenderedSizeFor(conn.source.elementId, srcEl)
     const tgtSize = getRenderedSizeFor(conn.target.elementId, tgtEl)
 
-    // For storage connections, normalize so non-storage=s1, storage=s2
-    let s1Id = conn.source.elementId, s2Id = conn.target.elementId
-    let s1Pos = srcEl.el.position, s2Pos = tgtEl.el.position
-    let s1Size = srcSize, s2Size = tgtSize
-    let s1Type = srcEl.type, s2Type = tgtEl.type
-    if (srcEl.type === 'storage' && tgtEl.type !== 'storage') {
-      [s1Id, s2Id] = [s2Id, s1Id];
-      [s1Pos, s2Pos] = [s2Pos, s1Pos];
-      [s1Size, s2Size] = [s2Size, s1Size];
-      [s1Type, s2Type] = [s2Type, s1Type];
-    }
+    const s1Id = conn.source.elementId, s2Id = conn.target.elementId
+    const s1Pos = srcEl.el.position, s2Pos = tgtEl.el.position
+    const s1Size = srcSize, s2Size = tgtSize
+    const s1Type = srcEl.type, s2Type = tgtEl.type
 
     const best = bestPortPair(
       { x: s1Pos.x, y: s1Pos.y, w: s1Size.w, h: s1Size.h },
@@ -528,17 +527,33 @@ function refreshConnections() {
     sideMap.get(k2)!.push(i)
   }
 
-  // Assign fractional positions per side: equal spacing — frac = (j+1)/(n+1)
-  // gives equal gaps: corner → conn1 = conn1 → conn2 = ... = connN → corner
+  // Assign fractional positions per side, sorted by the peer element's position
+  // so slots are spatially ordered:
+  //   e/w ports (horizontal exits) → sort peers top-to-bottom (by Y center)
+  //   n/s ports (vertical exits)   → sort peers left-to-right (by X center)
   const srcFracs = new Float32Array(routes.length).fill(0.5)
   const tgtFracs = new Float32Array(routes.length).fill(0.5)
   for (const [key, indices] of sideMap) {
     const n = indices.length
-    if (n <= 1) continue  // single connection → stays at center
-    const [elId] = key.split('|')
+    if (n <= 1) continue
+    const [elId, side] = key.split('|')
+    const horizontal = side === 'e' || side === 'w'
+
+    // Sort indices by the *peer* element's center coordinate
+    const sorted = [...indices].sort((a, b) => {
+      const ra = routes[a], rb = routes[b]
+      const peerA = ra.s1Id === elId ? ra.s2Pos : ra.s1Pos
+      const sizeA = ra.s1Id === elId ? ra.s2Size : ra.s1Size
+      const peerB = rb.s1Id === elId ? rb.s2Pos : rb.s1Pos
+      const sizeB = rb.s1Id === elId ? rb.s2Size : rb.s1Size
+      const centerA = horizontal ? peerA.y + sizeA.h / 2 : peerA.x + sizeA.w / 2
+      const centerB = horizontal ? peerB.y + sizeB.h / 2 : peerB.x + sizeB.w / 2
+      return centerA - centerB
+    })
+
     for (let j = 0; j < n; j++) {
       const frac = (j + 1) / (n + 1)
-      const routeIdx = indices[j]
+      const routeIdx = sorted[j]
       if (routes[routeIdx].s1Id === elId) srcFracs[routeIdx] = frac
       else tgtFracs[routeIdx] = frac
     }
@@ -619,11 +634,16 @@ svg.addEventListener('mousedown', e => {
   // Only start rubber-band if clicking on empty canvas (not on an element)
   const target = e.target as Element
   if (target.closest('[data-id]')) {
-    // Clicking bare canvas without hitting an element — clear selection
-    if (toolbar.activeTool === 'select') selection.clear()
+    // Clicked on an element — let its own mousedown handler take over
     return
   }
-  if (toolbar.activeTool === 'select') selection.clear()
+  // Clicked on empty canvas — clear selection and close all dialogs
+  if (toolbar.activeTool === 'select') {
+    dismissConnPopover?.()
+    dismissConnPopover = null
+    hideElementPropertiesPanel()
+    selection.clear()
+  }
   const pt = getSvgPoint(e)
   rubberBanding = true
   rubberStart = { x: pt.x, y: pt.y }
@@ -655,8 +675,22 @@ window.addEventListener('mousemove', e => {
 // Update resize cursor based on hover position
 svg.addEventListener('mousemove', e => {
   if (drag.isDragging || resize.isResizing || connect.isConnecting || rubberBanding) return
+
+  // Collect all element renderers so we can set cursor directly on each <g>
+  // (CSS cursor:move on the element classes overrides svg.style.cursor)
+  const allRendererEls = new Map<string, SVGGElement>()
+  classRenderers.forEach((r, id) => allRendererEls.set(id, r.el))
+  pkgRenderers.forEach((r, id) => allRendererEls.set(id, r.el))
+  storageRenderers.forEach((r, id) => allRendererEls.set(id, r.el))
+  actorRenderers.forEach((r, id) => allRendererEls.set(id, r.el))
+  queueRenderers.forEach((r, id) => allRendererEls.set(id, r.el))
+
   // No resize cursor when multiple elements are selected
-  if (selection.items.length > 1) { svg.style.cursor = ''; return }
+  if (selection.items.length > 1) {
+    allRendererEls.forEach(el => { el.style.cursor = '' })
+    return
+  }
+
   const d = store.state
   const allElements = [
     ...d.classes.map(c => { const s = classRenderers.get(c.id)?.getRenderedSize() ?? c.size; return { kind: 'class' as const, id: c.id, x: c.position.x, y: c.position.y, w: s.w, h: s.h } }),
@@ -665,9 +699,17 @@ svg.addEventListener('mousemove', e => {
     ...d.actors.map(a => { const s = actorRenderers.get(a.id)?.getRenderedSize() ?? a.size; return { kind: 'actor' as const, id: a.id, x: a.position.x, y: a.position.y, w: s.w, h: s.h } }),
     ...d.queues.map(q => { const s = queueRenderers.get(q.id)?.getRenderedSize() ?? q.size; return { kind: 'queue' as const, id: q.id, x: q.position.x, y: q.position.y, w: s.w, h: s.h } }),
   ]
+
   let hit = resize.hitTest(e, allElements)
   if (hit?.kind === 'class' && (hit.edge === 'n' || hit.edge === 's')) hit = null
-  svg.style.cursor = hit ? resize.edgeCursor(hit.edge) : ''
+
+  // Apply cursor directly on the element <g> so it beats the CSS cursor:move rule.
+  // Clear all first, then set the one that was hit.
+  allRendererEls.forEach(el => { el.style.cursor = '' })
+  if (hit) {
+    const el = allRendererEls.get(hit.id)
+    if (el) el.style.cursor = resize.edgeCursor(hit.edge)
+  }
 })
 
 window.addEventListener('mouseup', e => {

@@ -36,22 +36,30 @@ export class ResizeController {
   }
 
   private _edgeHit(px: number, py: number, ex: number, ey: number, ew: number, eh: number, h: number): Edge | null {
-    const onL = Math.abs(px - ex) < h
-    const onR = Math.abs(px - (ex + ew)) < h
-    const onT = Math.abs(py - ey) < h
-    const onB = Math.abs(py - (ey + eh)) < h
-    // strict interior check for edges; corners extend h px outside the corner
-    const inX = px >= ex - h && px <= ex + ew + h
-    const inY = py >= ey - h && py <= ey + eh + h
+    // Reject points outside the element
+    if (px < ex || px > ex + ew || py < ey || py > ey + eh) return null
 
-    if (onT && onL && inX && inY) return 'nw'
-    if (onT && onR && inX && inY) return 'ne'
-    if (onB && onL && inX && inY) return 'sw'
-    if (onB && onR && inX && inY) return 'se'
-    if (onT && px >= ex && px <= ex + ew) return 'n'
-    if (onB && px >= ex && px <= ex + ew) return 's'
-    if (onL && py >= ey && py <= ey + eh) return 'w'
-    if (onR && py >= ey && py <= ey + eh) return 'e'
+    // Clamp handle size so left/right and top/bottom zones can never overlap
+    const hx = Math.min(h, ew / 2)
+    const hy = Math.min(h, eh / 2)
+
+    const inLeft   = px <= ex + hx
+    const inRight  = px >= ex + ew - hx
+    const inTop    = py <= ey + hy
+    const inBottom = py >= ey + eh - hy
+
+    // Corners first (intersection of two strips)
+    if (inTop    && inLeft)  return 'nw'
+    if (inTop    && inRight) return 'ne'
+    if (inBottom && inLeft)  return 'sw'
+    if (inBottom && inRight) return 'se'
+
+    // Pure edges
+    if (inTop)    return 'n'
+    if (inBottom) return 's'
+    if (inLeft)   return 'w'
+    if (inRight)  return 'e'
+
     return null
   }
 

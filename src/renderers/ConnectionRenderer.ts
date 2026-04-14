@@ -21,8 +21,6 @@ export function injectMarkerDefs(svg: SVGSVGElement) {
     { id: 'arrow-storage',       path: 'M0,0 L9,4.5 L0,9', fill: 'none' },
     // Same marker but refX=0 for use as marker-start (tip at path start)
     { id: 'arrow-storage-start', path: 'M0,0 L9,4.5 L0,9', fill: 'none' },
-    // Request/channel connection — same open arrowhead, accent color
-    { id: 'arrow-request', path: 'M0,0 L9,4.5 L0,9', fill: 'none' },
   ]
 
   markers.forEach(({ id, path, fill }) => {
@@ -56,26 +54,6 @@ export function injectMarkerDefs(svg: SVGSVGElement) {
 }
 
 const DASH_TYPES: ConnectionType[] = ['dependency', 'realization']
-// Curvature bulge for vert.mod read-write curved arrows
-const CURVE_BULGE = 36
-
-/**
- * Build a curved arc path between two points.
- * bulge > 0 curves one way, bulge < 0 the other.
- */
-function curvedArrowPath(x1: number, y1: number, x2: number, y2: number, bulge: number): string {
-  const mx = (x1 + x2) / 2
-  const my = (y1 + y2) / 2
-  const dx = x2 - x1
-  const dy = y2 - y1
-  const len = Math.sqrt(dx * dx + dy * dy) || 1
-  // Perpendicular direction
-  const px = (-dy / len) * bulge
-  const py = (dx / len) * bulge
-  const cx = mx + px
-  const cy = my + py
-  return `M${x1.toFixed(1)},${y1.toFixed(1)} Q${cx.toFixed(1)},${cy.toFixed(1)} ${x2.toFixed(1)},${y2.toFixed(1)}`
-}
 
 export class ConnectionRenderer {
   readonly el: SVGGElement
@@ -165,37 +143,22 @@ export class ConnectionRenderer {
     this.channelSymbol.style.display = 'none'
 
     if (conn.type === 'read-write') {
-      // vert.mod style: two curved opposing arrows, base bulge offset by parallel index
-      const dFwd = curvedArrowPath(x1, y1, x2, y2,  CURVE_BULGE + offset)
-      const dBwd = curvedArrowPath(x2, y2, x1, y1,  CURVE_BULGE + offset)
-
-      this.path.setAttribute('d', dFwd)
-      this.path.setAttribute('marker-end', 'url(#arrow-storage)')
-      this.path.removeAttribute('marker-start')
-      this.path.style.stroke = 'var(--ctp-teal)'
-
-      this.pathB.setAttribute('d', dBwd)
-      this.pathB.setAttribute('marker-end', 'url(#arrow-storage)')
-      this.pathB.removeAttribute('marker-start')
-      this.pathB.style.stroke = 'var(--ctp-teal)'
-      this.pathB.style.display = ''
-
-      this.hitPath.setAttribute('d', dFwd)
-
-    } else if (conn.type === 'read') {
+      // Bidirectional: arrows at both ends
       const d = orthogonalPath(x1, y1, srcPort, x2, y2, tgtPort, offset, srcRect, tgtRect)
       this.path.setAttribute('d', d)
+      this.path.setAttribute('marker-start', 'url(#arrow-storage-start)')
       this.path.setAttribute('marker-end', 'url(#arrow-storage)')
-      this.path.removeAttribute('marker-start')
       this.path.style.stroke = 'var(--ctp-teal)'
       this.pathB.style.display = 'none'
       this.hitPath.setAttribute('d', d)
 
-    } else if (conn.type === 'write') {
+    } else if (conn.type === 'read' || conn.type === 'write') {
+      // Arrow always points at the target end (marker-end), identical to class connections.
+      // Direction is determined by which element is source vs target — use the flip button to reverse.
       const d = orthogonalPath(x1, y1, srcPort, x2, y2, tgtPort, offset, srcRect, tgtRect)
       this.path.setAttribute('d', d)
-      this.path.setAttribute('marker-start', 'url(#arrow-storage-start)')
-      this.path.removeAttribute('marker-end')
+      this.path.setAttribute('marker-end', 'url(#arrow-storage)')
+      this.path.removeAttribute('marker-start')
       this.path.style.stroke = 'var(--ctp-teal)'
       this.pathB.style.display = 'none'
       this.hitPath.setAttribute('d', d)
@@ -203,7 +166,7 @@ export class ConnectionRenderer {
     } else if (conn.type === 'request') {
       const d = orthogonalPath(x1, y1, srcPort, x2, y2, tgtPort, offset, srcRect, tgtRect)
       this.path.setAttribute('d', d)
-      this.path.setAttribute('marker-end', 'url(#arrow-request)')
+      this.path.removeAttribute('marker-end')
       this.path.removeAttribute('marker-start')
       this.path.style.stroke = 'var(--ctp-mauve)'
       this.pathB.style.display = 'none'
