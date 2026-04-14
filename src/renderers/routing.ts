@@ -3,13 +3,14 @@
  *
  * Design goals
  * ────────────
- * 1. Prefer L-shapes (one turn) over U-shapes (two turns).
- * 2. Never route a segment that goes forward then doubles back over itself.
- * 3. When a U-shape is unavoidable (same-direction exits or backward L), push
- *    the crossbar far enough outside both elements so the path never passes
- *    through them.
- * 4. Arrowheads always enter/exit elements perpendicular to the element side —
- *    the stub segments guarantee this; the offset only shifts interior waypoints.
+ * 1. Shape priority: I > L > U > Z > backward shapes. Shortest path wins within a tier.
+ * 2. All path corners are rounded (quadratic Bézier), including the stub junctions.
+ *    Arrowheads still arrive perpendicular — guaranteed by the stub exit segments,
+ *    not by keeping junctions sharp.
+ * 3. Paths never pass through source or target entities. L-corners that would land
+ *    inside an element are rejected; the router falls back to an outer-U path.
+ * 4. When multiple connections share a port side, slots are evenly spaced and
+ *    sorted by peer-element center position (handled in refreshConnections).
  * 5. Port-pair selection scores *actual route quality*, not raw Euclidean dist.
  */
 
@@ -19,7 +20,7 @@ export type PortSide = 'n' | 'e' | 's' | 'w'
 
 const CORNER_R = 8    // px — rounded elbow radius
 const STUB     = 20   // px — perpendicular exit from port before first turn
-const MARGIN   = 24   // px — clearance outside an element for U-shape crossbars
+const MARGIN   = 24   // px — clearance outside an element for U/Z crossbars
 const PORT_SIDES: PortSide[] = ['n', 'e', 's', 'w']
 
 interface Rect { x: number; y: number; w: number; h: number }
@@ -43,6 +44,15 @@ function portPt(rect: Rect, side: PortSide, frac = 0.5): Pt {
 // ─── Route-point computation ──────────────────────────────────────────────────
 
 /**
+ * Returns true if (px, py) is strictly inside rect (not touching the border).
+ * Used to detect when an L-corner would route through an element.
+ */
+function pointInRect(px: number, py: number, rect: Rect): boolean {
+  return px > rect.x && px < rect.x + rect.w &&
+         py > rect.y && py < rect.y + rect.h
+}
+
+/**
  * Stub endpoint for a port: port position + STUB pixels in the exit direction.
  */
 function stub(rect: Rect, side: PortSide, frac = 0.5): Pt {
@@ -62,13 +72,13 @@ function stub(rect: Rect, side: PortSide, frac = 0.5): Pt {
  *
  * Cases:
  *   Orthogonal (e→n, n→w, …):
- *     L-shape if the corner is "in front" of both elements (no backtracking).
- *     Falls back to a 3-segment U-shape if the corner would be behind either element.
+ *     L-shape if the corner is forward AND does not land inside either element.
+ *     Falls back to a 3-segment outer-U if the corner is behind or overlaps an entity.
  *   Opposing (e→w, n→s, …):
- *     L-shape (2 turns via midpoint crossbar) when target is in front.
- *     Outer U-shape when target is behind source.
+ *     I-shape (0 turns) when stubs are aligned; U-shape (midpoint crossbar) when in-front
+ *     but offset; outer-U when target is behind source.
  *   Same direction (e→e, n→n, …):
- *     Z-shape (2 turns), crossbar cleared past the farther element at source level.
+ *     Z-shape (2 turns), outer rail at source level, cleared past both elements.
  */
 function innerWaypoints(
   sx: number, sy: number, sp: PortSide,   // src stub endpoint + exit dir
@@ -78,16 +88,17 @@ function innerWaypoints(
   const [sdx, sdy] = DIR[sp]
   const [tdx, tdy] = DIR[tp]
 
-  // ── Orthogonal exits (one horizontal, one vertical) ───────────────────────
+  // ── L-shape or outer-U (orthogonal exits) ────────────────────────────────
   if (sdy === 0 && tdx === 0) {
     // src exits horizontally, tgt exits vertically
-    // Ideal L-corner: (tx, sy) — src travels horizontally to tx, then tgt travels vertically to sy
-    // "Forward" check: tx must be in src's exit direction from sx
-    const cornerOk = sdx > 0 ? tx >= sx : tx <= sx
+    // Ideal L-corner: (tx, sy) — forward AND not inside either element
+    const cornerOk = (sdx > 0 ? tx >= sx : tx <= sx)
+                   && !pointInRect(tx, sy, srcRect)
+                   && !pointInRect(tx, sy, tgtRect)
     if (cornerOk) {
       return [[snap(tx), snap(sy)]]
     } else {
-      // Corner is behind — use a 3-segment U: go out in exit dir, cross to tgt column, then approach tgt
+      // Corner is behind or overlaps — outer-U cleared past both elements
       const outerX = sdx > 0
         ? snap(Math.max(srcRect.x + srcRect.w, tgtRect.x + tgtRect.w) + MARGIN)
         : snap(Math.min(srcRect.x, tgtRect.x) - MARGIN)
@@ -97,11 +108,13 @@ function innerWaypoints(
   if (sdx === 0 && tdy === 0) {
     // src exits vertically, tgt exits horizontally
     // Ideal L-corner: (sx, ty)
-    const cornerOk = sdy > 0 ? ty >= sy : ty <= sy
+    const cornerOk = (sdy > 0 ? ty >= sy : ty <= sy)
+                   && !pointInRect(sx, ty, srcRect)
+                   && !pointInRect(sx, ty, tgtRect)
     if (cornerOk) {
       return [[snap(sx), snap(ty)]]
     } else {
-      // Corner is behind — 3-segment U
+      // Corner is behind or overlaps — outer-U
       const outerY = sdy > 0
         ? snap(Math.max(srcRect.y + srcRect.h, tgtRect.y + tgtRect.h) + MARGIN)
         : snap(Math.min(srcRect.y, tgtRect.y) - MARGIN)
@@ -109,7 +122,7 @@ function innerWaypoints(
     }
   }
 
-  // ── Opposing exits (e→w or w→e, n→s or s→n) ─────────────────────────────
+  // ── I-shape / U-shape (opposing exits) ───────────────────────────────────
   if (OPP[sp] === tp) {
     if (sdy === 0) {
       // Horizontal opposing: e→w or w→e
@@ -117,11 +130,10 @@ function innerWaypoints(
       if (inFront) {
         // I-shape: stubs on the same Y → straight horizontal line, no waypoints needed
         if (Math.abs(sy - ty) < 2) return []
-        // U-shape: route via midpoint crossbar
-        const my = snap((sy + ty) / 2)
-        return [[snap(sx), my], [snap(tx), my]]
+        // Z-shape: exit at source level, cross vertically, enter at target level
+        return [[snap(sx), snap(sy)], [snap(tx), snap(sy)], [snap(tx), snap(ty)]]
       } else {
-        // Target is behind — go around the outside of both elements
+        // Target is behind — outer-U cleared past both elements
         const outerX = sdx > 0
           ? snap(Math.max(srcRect.x + srcRect.w, tgtRect.x + tgtRect.w) + MARGIN)
           : snap(Math.min(srcRect.x, tgtRect.x) - MARGIN)
@@ -133,9 +145,8 @@ function innerWaypoints(
       if (inFront) {
         // I-shape: stubs on the same X → straight vertical line, no waypoints needed
         if (Math.abs(sx - tx) < 2) return []
-        // U-shape: route via midpoint crossbar
-        const mx = snap((sx + tx) / 2)
-        return [[mx, snap(sy)], [mx, snap(ty)]]
+        // Z-shape: exit at source level, cross horizontally, enter at target level
+        return [[snap(sx), snap(sy)], [snap(sx), snap(ty)], [snap(tx), snap(ty)]]
       } else {
         const outerY = sdy > 0
           ? snap(Math.max(srcRect.y + srcRect.h, tgtRect.y + tgtRect.h) + MARGIN)
@@ -173,14 +184,15 @@ function innerWaypoints(
 /**
  * Score a port-pair route. Lower = better.
  *
- * Visual quality tiers (turn cost):
- *   0 — I-shape: perfectly straight, no turns
- *   1 — L-shape OR opposing-forward (both 1 visual bend)
- *   2 — Z same-direction: two turns around the farther element
- *   + large penalties for backward paths that require going behind elements
+ * Shape priority tiers:
+ *   I-shape (opposing, aligned)          — 0 + pathLen        (~shortest)
+ *   L-shape (orthogonal, forward, clear) — 2000 + pathLen
+ *   Z-shape (opposing, in-front, offset) — 3500 + pathLen
+ *   Z-shape (same-direction)             — 4500 + pathLen
+ *   Backward-L / overlap fallback        — 7000 + pathLen
+ *   Backward-U (opposing, behind)        — 8000 + pathLen
  *
- * Opposing-forward scores the same as L (both = 1 visual bend).
- * Path length breaks ties so the shorter route wins — a short S beats a long L.
+ * Path length breaks ties within a tier.
  */
 function routeScore(src: Rect, sp: PortSide, tgt: Rect, tp: PortSide): number {
   const [sdx, sdy] = DIR[sp]
@@ -189,7 +201,7 @@ function routeScore(src: Rect, sp: PortSide, tgt: Rect, tp: PortSide): number {
   const [tx, ty] = stub(tgt, tp)
 
   let turns = 0
-  let backwardPenalty = 0
+  let shapePenalty = 0
 
   if (OPP[sp] === tp) {
     // Opposing ports (e→w, w→e, n→s, s→n)
@@ -198,32 +210,34 @@ function routeScore(src: Rect, sp: PortSide, tgt: Rect, tp: PortSide): number {
       : (sdy > 0 ? ty >= sy : ty <= sy)
 
     if (inFront) {
-      // I-shape (0 turns) when stubs share the same perpendicular axis
       const aligned = sdy === 0
         ? Math.abs(sy - ty) < 2
         : Math.abs(sx - tx) < 2
-      // S-shape and L-shape are equal quality (both 1 visual bend).
-      // Path length alone decides which wins — shorter route is always preferred.
       turns = aligned ? 0 : 1
+      shapePenalty = aligned ? 0 : 1500   // U-shape costs more than L
     } else {
-      // Target is behind — U wraps outside both elements, costly
+      // Target is behind — outer-U is very costly
       turns = 2
-      backwardPenalty = 4000
+      shapePenalty = 4000
     }
   } else if (sp === tp) {
     // Same-direction (e→e, n→n …) — Z-shape around the farther element
     turns = 2
-    backwardPenalty = 500
+    shapePenalty = 500
   } else {
-    // Orthogonal exits — L-shape (1 turn) if corner is forward, else backward-U
-    let cornerOk = true
+    // Orthogonal exits — L-shape if corner is forward AND clear of both elements
+    let cornerOk: boolean
     if (sdy === 0) {
-      cornerOk = sdx > 0 ? tx >= sx : tx <= sx
+      cornerOk = (sdx > 0 ? tx >= sx : tx <= sx)
+               && !pointInRect(tx, sy, src)
+               && !pointInRect(tx, sy, tgt)
     } else {
-      cornerOk = sdy > 0 ? ty >= sy : ty <= sy
+      cornerOk = (sdy > 0 ? ty >= sy : ty <= sy)
+               && !pointInRect(sx, ty, src)
+               && !pointInRect(sx, ty, tgt)
     }
     turns = cornerOk ? 1 : 2
-    if (!cornerOk) backwardPenalty = 3000
+    shapePenalty = cornerOk ? 0 : 3000
   }
 
   // Actual path length through computed waypoints
@@ -234,18 +248,24 @@ function routeScore(src: Rect, sp: PortSide, tgt: Rect, tp: PortSide): number {
     pathLen += Math.abs(chain[i][0] - chain[i-1][0]) + Math.abs(chain[i][1] - chain[i-1][1])
   }
 
-  return turns * 2000 + backwardPenalty + pathLen
+  return turns * 2000 + shapePenalty + pathLen
 }
 
 /**
  * Pick the best (srcPort, tgtPort) pair.
- * Scores all 16 combinations and returns the lowest-cost one.
+ * Scores all combinations of the allowed port sides and returns the lowest-cost one.
+ * Pass `srcSides`/`tgtSides` to restrict which port sides are considered (e.g. queue only allows e/w).
+ * Defaults to all four cardinal sides when not specified.
  */
-export function bestPortPair(src: Rect, tgt: Rect): { src: PortSide; tgt: PortSide } {
-  let best = { src: 'e' as PortSide, tgt: 'w' as PortSide }
+export function bestPortPair(
+  src: Rect, tgt: Rect,
+  srcSides: PortSide[] = PORT_SIDES as unknown as PortSide[],
+  tgtSides: PortSide[] = PORT_SIDES as unknown as PortSide[],
+): { src: PortSide; tgt: PortSide } {
+  let best = { src: (srcSides[0] ?? 'e') as PortSide, tgt: (tgtSides[0] ?? 'w') as PortSide }
   let bestScore = Infinity
-  for (const sp of PORT_SIDES) {
-    for (const tp of PORT_SIDES) {
+  for (const sp of srcSides) {
+    for (const tp of tgtSides) {
       const score = routeScore(src, sp, tgt, tp)
       if (score < bestScore) { bestScore = score; best = { src: sp, tgt: tp } }
     }
@@ -296,12 +316,20 @@ export function orthogonalPath(
 
 // ─── SVG path renderer ────────────────────────────────────────────────────────
 
+/**
+ * Build an SVG `d` string from an array of orthogonal waypoints.
+ *
+ * Inner waypoints (between the two stub endpoints) get rounded corners via
+ * quadratic Bézier arcs. The stub junctions (indices 1 and last-1) are always
+ * kept as sharp L commands — this preserves the full stub length so paths exit
+ * and enter entities at exactly 90°. The arrowhead markers sit at index 0 and
+ * index last (the port endpoints), oriented by the axis-aligned stub segment.
+ */
 function buildSmoothPath(all: Pt[]): string {
   const pts = dedup(all)
   if (pts.length < 2) return ''
 
   const last = pts.length - 1
-
   let d = `M${fmt(pts[0][0])},${fmt(pts[0][1])}`
 
   for (let i = 1; i < pts.length; i++) {
@@ -309,22 +337,21 @@ function buildSmoothPath(all: Pt[]): string {
     const cur  = pts[i]
     const next = pts[i + 1]
 
+    // Always emit a sharp L for the final point
     if (!next) {
       d += ` L${fmt(cur[0])},${fmt(cur[1])}`
       continue
     }
 
-    // Never round the stub junctions (i=1 and i=last-1): these connect the
-    // port exit segment to the first inner turn and the last inner turn to the
-    // port entry segment. Rounding here would make arrowheads arrive at a
-    // non-perpendicular angle.
+    // Keep stub junctions sharp so the full stub length is preserved.
+    // i=1: port→stub→first-turn; i=last-1: last-turn→stub→port.
     const isStubJunction = i === 1 || i === last - 1
     if (isStubJunction) {
       d += ` L${fmt(cur[0])},${fmt(cur[1])}`
       continue
     }
 
-    // Skip rounding when segments are collinear (no real turn)
+    // Skip rounding when three consecutive points are collinear (no real turn)
     const sameAxis =
       (prev[0] === cur[0] && cur[0] === next[0]) ||
       (prev[1] === cur[1] && cur[1] === next[1])
@@ -333,6 +360,8 @@ function buildSmoothPath(all: Pt[]): string {
       continue
     }
 
+    // Round the corner with a quadratic Bézier.
+    // Radius is clamped to half the shorter adjacent segment so arcs never overlap.
     const r = Math.min(CORNER_R, segLen(prev, cur) / 2, segLen(cur, next) / 2)
     if (r < 0.5) {
       d += ` L${fmt(cur[0])},${fmt(cur[1])}`

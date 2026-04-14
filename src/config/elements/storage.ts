@@ -3,19 +3,16 @@ import { CARDINAL_PORTS } from './umlClass.ts'
 
 /**
  * Storage element — rounded rectangle, data store.
- * Only read / write / read-write connections are meaningful here,
- * modelled as three subtypes of 'association':
- *   - 'read'       (arrow FROM storage → caller)
- *   - 'write'      (arrow TO storage ← caller)
- *   - 'read-write' (both directions)
- * We reuse the ConnectionType union — see Connection.ts for the added types.
+ * Only write / read-write connections are meaningful here.
+ * Direction (which entity reads vs writes) is determined by source→target order;
+ * use the flip button to reverse. 'read-write' renders as two parallel arrows.
  */
 export const storageConfig: ElementConfig = {
   type: 'storage',
   defaultSize: { w: 160, h: 60 },
   ports: CARDINAL_PORTS,
   connectionRule: {
-    asSource: ['read', 'read-write'],
+    asSource: ['write', 'read-write'],
     asTarget: ['write', 'read-write'],
   },
   supportsMultiplicity: false,

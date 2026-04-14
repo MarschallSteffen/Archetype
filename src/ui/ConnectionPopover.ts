@@ -13,11 +13,10 @@ const UML_TYPE_ICONS: Array<{ type: ConnectionType; icon: string; label: string 
   { type: 'aggregation',  icon: '◇→', label: 'Aggregation'  },
 ]
 
-// Storage data-flow icons
+// Storage data-flow icons — single direction (write) and bidirectional (read-write)
 const STORAGE_TYPE_ICONS: Array<{ type: ConnectionType; icon: string; label: string }> = [
-  { type: 'read',       icon: '←',  label: 'Read (storage → entity)'  },
-  { type: 'write',      icon: '→',  label: 'Write (entity → storage)' },
-  { type: 'read-write', icon: '↔',  label: 'Read + Write'             },
+  { type: 'write',      icon: '→',  label: 'Single direction (flip to reverse)' },
+  { type: 'read-write', icon: '⇄',  label: 'Bidirectional'                      },
 ]
 
 /**
@@ -28,7 +27,7 @@ export function allowedConnectionTypes(
   tgtConfig: ElementConfig | undefined,
 ): ConnectionType[] {
   const isStorageInvolved = srcConfig?.type === 'storage' || tgtConfig?.type === 'storage'
-  if (isStorageInvolved) return ['read', 'write', 'read-write']
+  if (isStorageInvolved) return ['write', 'read-write']
 
   const isActorOrQueue = (cfg: ElementConfig | undefined) =>
     cfg?.type === 'agent' || cfg?.type === 'human-agent' || cfg?.type === 'queue'
@@ -68,7 +67,7 @@ export function showConnectionPopover(
 
   const layer = document.getElementById('popover-layer')!
   const types = allowedConnectionTypes(srcConfig, tgtConfig)
-  const isStorage  = types.includes('read')
+  const isStorage  = types.includes('write') && !types.includes('association')
   const isRequest  = types.length === 1 && types[0] === 'request'
   const showMultiplicity =
     !isStorage && !isRequest &&
@@ -97,7 +96,9 @@ export function showConnectionPopover(
     `).join('')
   }
 
-  const flipBtn = onFlip ? `<button class="conn-flip-btn" title="Flip / reverse arrow direction">⇄</button>` : ''
+  // Flip button: only shown for single-direction storage connections (not bidirectional, not request)
+  const showFlip = onFlip && isStorage && activeType !== 'read-write'
+  const flipBtn = showFlip ? `<button class="conn-flip-btn" title="Flip / reverse arrow direction">⇄</button>` : ''
 
   const multHtml = showMultiplicity ? `
     <div class="conn-mult-row">
@@ -135,6 +136,9 @@ export function showConnectionPopover(
       currentType = btn.dataset.type as ConnectionType
       popover.querySelectorAll('.conn-type-btn').forEach(b => b.classList.remove('active'))
       btn.classList.add('active')
+      // Show flip only for single-direction storage connections
+      const flipEl = popover.querySelector<HTMLButtonElement>('.conn-flip-btn')
+      if (flipEl) flipEl.style.display = currentType === 'read-write' ? 'none' : ''
       const { type, src, tgt } = getValues()
       onConfirm(type, src, tgt)
     })

@@ -30,6 +30,7 @@ import { absolutePortPosition } from './renderers/ports.ts'
 import { getElementConfig } from './config/registry.ts'
 import type { ElementKind } from './types.ts'
 import { bestPortPair, pathMidpoint } from './renderers/routing.ts'
+import type { PortSide } from './renderers/routing.ts'
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
@@ -85,7 +86,7 @@ function getSvgPoint(e: MouseEvent): DOMPoint {
 
 const drag    = new DragController(store, getSvgPoint)
 const resize  = new ResizeController(store, getSvgPoint, getMinSize, () => store.state.viewport.zoom)
-const connect = new ConnectionController(store, svg, getSvgPoint, showConnectionPopover)
+const connect = new ConnectionController(store, svg, viewGroup, getSvgPoint, showConnectionPopover)
 
 // ─── Add renderers ────────────────────────────────────────────────────────────
 
@@ -504,9 +505,16 @@ function refreshConnections() {
     const s1Size = srcSize, s2Size = tgtSize
     const s1Type = srcEl.type, s2Type = tgtEl.type
 
+    const srcCfg = getElementConfig(s1Type)
+    const tgtCfg = getElementConfig(s2Type)
+    const srcSides = srcCfg?.ports.map(p => p.id as PortSide)
+    const tgtSides = tgtCfg?.ports.map(p => p.id as PortSide)
+
     const best = bestPortPair(
       { x: s1Pos.x, y: s1Pos.y, w: s1Size.w, h: s1Size.h },
       { x: s2Pos.x, y: s2Pos.y, w: s2Size.w, h: s2Size.h },
+      srcSides,
+      tgtSides,
     )
     conn.source.port = best.src
     conn.target.port = best.tgt

@@ -4,6 +4,7 @@ import { createConnection } from '../entities/Connection.ts'
 import type { PortSide } from '../entities/Connection.ts'
 import { absolutePortPosition } from '../renderers/ports.ts'
 import { bestPortPair } from '../renderers/routing.ts'
+import type { PortSide as RoutePortSide } from '../renderers/routing.ts'
 import type { ElementConfig } from '../config/ElementConfig.ts'
 import { getElementConfig } from '../config/registry.ts'
 import { allowedConnectionTypes } from '../ui/ConnectionPopover.ts'
@@ -32,6 +33,7 @@ export class ConnectionController {
   constructor(
     private store: DiagramStore,
     private svg: SVGSVGElement,
+    private ghostContainer: SVGElement,
     private getSvgPoint: (e: MouseEvent) => DOMPoint,
     private showConnectionPopover: (
       x: number,
@@ -61,7 +63,7 @@ export class ConnectionController {
     line.setAttribute('y1', String(abs.y))
     line.setAttribute('x2', String(abs.x))
     line.setAttribute('y2', String(abs.y))
-    this.svg.appendChild(line)
+    this.ghostContainer.appendChild(line)
     this.ghostLine = line
   }
 
@@ -105,9 +107,15 @@ export class ConnectionController {
     let resolvedTgtPort = targetPort
 
     if (!resolvedTgtPort && srcEl) {
+      const srcCfg = getElementConfig(src.elementType)
+      const tgtCfg = getElementConfig(tgtType)
+      const srcSides = srcCfg?.ports.map(p => p.id as RoutePortSide)
+      const tgtSides = tgtCfg?.ports.map(p => p.id as RoutePortSide)
       const best = bestPortPair(
         { x: srcEl.position.x, y: srcEl.position.y, w: srcEl.size.w, h: srcEl.size.h },
         { x: tgtEl.position.x, y: tgtEl.position.y, w: tgtEl.size.w, h: tgtEl.size.h },
+        srcSides,
+        tgtSides,
       )
       resolvedSrcPort = best.src
       resolvedTgtPort = best.tgt

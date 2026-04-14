@@ -124,37 +124,48 @@ export class ConnectionRenderer {
   /**
    * Update the rendered path.
    *
-   * For storage types the arrow direction encodes the data-flow semantic:
-   *   read       — storage → class  (arrow points at class  = marker-start on the forward path)
-   *   write      — class → storage  (arrow points at storage = marker-start on the forward path)
-   *   read-write — two curved arrows (vert.mod style), one each direction
+   * Storage connections:
+   *   write      — single arrow pointing at target (marker-end); flip to reverse direction.
+   *   read-write — two parallel lines offset ±PARALLEL_GAP px perpendicular to the path,
+   *                each with marker-end pointing at its respective target entity.
    *
    * x1/y1 are the SOURCE port coords, x2/y2 are the TARGET port coords.
-   * The caller (refreshConnections) always passes source → target in the
-   * connection's stored order, so we use that ordering as canonical.
-   *
-   * `offset` shifts the path laterally so parallel connections between the same
-   * pair of elements are visually separated.
    */
   updatePoints(x1: number, y1: number, x2: number, y2: number, srcPort = 'e', tgtPort = 'w', conn = this.conn, offset = 0, srcRect?: Rect, tgtRect?: Rect) {
     const isDash = DASH_TYPES.includes(conn.type)
     this.path.setAttribute('stroke-dasharray', isDash ? '6 3' : 'none')
+    this.pathB.setAttribute('stroke-dasharray', 'none')
 
     this.channelSymbol.style.display = 'none'
 
     if (conn.type === 'read-write') {
-      // Bidirectional: arrows at both ends
-      const d = orthogonalPath(x1, y1, srcPort, x2, y2, tgtPort, offset, srcRect, tgtRect)
-      this.path.setAttribute('d', d)
-      this.path.setAttribute('marker-start', 'url(#arrow-storage-start)')
+      // Two parallel lines, each with a single arrowhead pointing at one entity.
+      // Offset perpendicular to the primary exit direction so the lines don't overlap.
+      // For horizontal exits (e/w) offset vertically; for vertical exits (n/s) offset horizontally.
+      const horiz = srcPort === 'e' || srcPort === 'w'
+      const GAP = 3.5
+      const ox = horiz ? 0 : GAP
+      const oy = horiz ? GAP : 0
+
+      // Forward path: source → target (offset +GAP)
+      const dFwd = orthogonalPath(x1 + ox, y1 + oy, srcPort, x2 + ox, y2 + oy, tgtPort, offset, srcRect, tgtRect)
+      this.path.setAttribute('d', dFwd)
       this.path.setAttribute('marker-end', 'url(#arrow-storage)')
+      this.path.removeAttribute('marker-start')
       this.path.style.stroke = 'var(--ctp-teal)'
-      this.pathB.style.display = 'none'
-      this.hitPath.setAttribute('d', d)
+
+      // Reverse path: target → source (offset -GAP, swapped direction)
+      const dRev = orthogonalPath(x2 - ox, y2 - oy, tgtPort, x1 - ox, y1 - oy, srcPort, offset, tgtRect, srcRect)
+      this.pathB.setAttribute('d', dRev)
+      this.pathB.setAttribute('marker-end', 'url(#arrow-storage)')
+      this.pathB.removeAttribute('marker-start')
+      this.pathB.style.stroke = 'var(--ctp-teal)'
+      this.pathB.style.display = ''
+
+      this.hitPath.setAttribute('d', dFwd)
 
     } else if (conn.type === 'read' || conn.type === 'write') {
-      // Arrow always points at the target end (marker-end), identical to class connections.
-      // Direction is determined by which element is source vs target — use the flip button to reverse.
+      // Single arrow pointing at target. Direction = source→target order; use flip to reverse.
       const d = orthogonalPath(x1, y1, srcPort, x2, y2, tgtPort, offset, srcRect, tgtRect)
       this.path.setAttribute('d', d)
       this.path.setAttribute('marker-end', 'url(#arrow-storage)')
