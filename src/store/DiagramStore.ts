@@ -74,6 +74,21 @@ export class DiagramStore {
     }
   }
 
+  /** Search all collections for an element by id (kind-agnostic). */
+  findAnyElement(id: string): { id: string; position: Point; size: Size; elementType?: string } | undefined {
+    const collections: Array<{ id: string; position: Point; size: Size; elementType?: string }[]> = [
+      this.diagram.classes, this.diagram.packages, this.diagram.storages,
+      this.diagram.actors, this.diagram.queues, this.diagram.useCases,
+      this.diagram.ucSystems, this.diagram.states, this.diagram.startStates,
+      this.diagram.endStates,
+    ]
+    for (const col of collections) {
+      const el = col?.find(e => e.id === id)
+      if (el) return el
+    }
+    return undefined
+  }
+
   updateElementPosition(kind: ElementKind, id: string, patch: { position: Point; size?: Size }): void {
     switch (kind) {
       case 'class':       this.updateClass(id, patch); break

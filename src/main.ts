@@ -52,7 +52,7 @@ import type { UCSystem } from './entities/UCSystem.ts'
 import type { State } from './entities/State.ts'
 import type { StartState } from './entities/StartState.ts'
 import type { EndState } from './entities/EndState.ts'
-import type { SequenceMessage } from './entities/SequenceLifeline.ts'
+import type { SequenceLifeline, SequenceMessage } from './entities/SequenceLifeline.ts'
 import type { CombinedFragment } from './entities/CombinedFragment.ts'
 import type { Connection } from './entities/Connection.ts'
 import { absolutePortPosition } from './renderers/ports.ts'
@@ -206,7 +206,7 @@ interface AnyRenderer {
   readonly el: SVGGElement
   setSelected(s: boolean): void
   getRenderedSize(): { w: number; h: number }
-  destroy?(): void
+  destroy(): void
 }
 
 interface ElementDesc {
@@ -215,6 +215,7 @@ interface ElementDesc {
   renderers: Map<string, AnyRenderer>
   remove: (id: string) => void
   add: (el: any) => void
+  addRenderer: (el: any) => void
 }
 
 // Filled after store is available (below). Order matters for z-order in rebuildAll.
@@ -222,18 +223,18 @@ let ELEMENTS: ElementDesc[] = []
 
 function initElementDescriptors() {
   ELEMENTS = [
-    { kind: 'package',     collection: 'packages',          renderers: pkgRenderers as Map<string, AnyRenderer>,           remove: id => store.removePackage(id),           add: el => store.addPackage(el) },
-    { kind: 'storage',     collection: 'storages',          renderers: storageRenderers as Map<string, AnyRenderer>,       remove: id => store.removeStorage(id),           add: el => store.addStorage(el) },
-    { kind: 'actor',       collection: 'actors',            renderers: actorRenderers as Map<string, AnyRenderer>,         remove: id => store.removeActor(id),             add: el => store.addActor(el) },
-    { kind: 'queue',       collection: 'queues',            renderers: queueRenderers as Map<string, AnyRenderer>,         remove: id => store.removeQueue(id),             add: el => store.addQueue(el) },
-    { kind: 'use-case',    collection: 'useCases',          renderers: ucRenderers as Map<string, AnyRenderer>,            remove: id => store.removeUseCase(id),           add: el => store.addUseCase(el) },
-    { kind: 'uc-system',   collection: 'ucSystems',         renderers: ucSystemRenderers as Map<string, AnyRenderer>,      remove: id => store.removeUCSystem(id),          add: el => store.addUCSystem(el) },
-    { kind: 'state',       collection: 'states',            renderers: stateRenderers as Map<string, AnyRenderer>,         remove: id => store.removeState(id),             add: el => store.addState(el) },
-    { kind: 'start-state', collection: 'startStates',       renderers: startStateRenderers as Map<string, AnyRenderer>,    remove: id => store.removeStartState(id),        add: el => store.addStartState(el) },
-    { kind: 'end-state',   collection: 'endStates',         renderers: endStateRenderers as Map<string, AnyRenderer>,      remove: id => store.removeEndState(id),          add: el => store.addEndState(el) },
-    { kind: 'seq-diagram', collection: 'sequenceDiagrams',  renderers: seqDiagramRenderers as Map<string, AnyRenderer>,    remove: id => store.removeSequenceDiagram(id),   add: el => store.addSequenceDiagram(el) },
-    { kind: 'seq-fragment',collection: 'combinedFragments', renderers: seqFragmentRenderers as Map<string, AnyRenderer>,   remove: id => store.removeCombinedFragment(id),  add: el => store.addCombinedFragment(el) },
-    { kind: 'class',       collection: 'classes',           renderers: classRenderers as Map<string, AnyRenderer>,         remove: id => store.removeClass(id),             add: el => store.addClass(el) },
+    { kind: 'package',     collection: 'packages',          renderers: pkgRenderers as Map<string, AnyRenderer>,           remove: id => store.removePackage(id),           add: el => store.addPackage(el),           addRenderer: addPackageRenderer },
+    { kind: 'storage',     collection: 'storages',          renderers: storageRenderers as Map<string, AnyRenderer>,       remove: id => store.removeStorage(id),           add: el => store.addStorage(el),           addRenderer: addStorageRenderer },
+    { kind: 'actor',       collection: 'actors',            renderers: actorRenderers as Map<string, AnyRenderer>,         remove: id => store.removeActor(id),             add: el => store.addActor(el),             addRenderer: addActorRenderer },
+    { kind: 'queue',       collection: 'queues',            renderers: queueRenderers as Map<string, AnyRenderer>,         remove: id => store.removeQueue(id),             add: el => store.addQueue(el),             addRenderer: addQueueRenderer },
+    { kind: 'use-case',    collection: 'useCases',          renderers: ucRenderers as Map<string, AnyRenderer>,            remove: id => store.removeUseCase(id),           add: el => store.addUseCase(el),           addRenderer: addUseCaseRenderer },
+    { kind: 'uc-system',   collection: 'ucSystems',         renderers: ucSystemRenderers as Map<string, AnyRenderer>,      remove: id => store.removeUCSystem(id),          add: el => store.addUCSystem(el),          addRenderer: addUCSystemRenderer },
+    { kind: 'state',       collection: 'states',            renderers: stateRenderers as Map<string, AnyRenderer>,         remove: id => store.removeState(id),             add: el => store.addState(el),             addRenderer: addStateRenderer },
+    { kind: 'start-state', collection: 'startStates',       renderers: startStateRenderers as Map<string, AnyRenderer>,    remove: id => store.removeStartState(id),        add: el => store.addStartState(el),        addRenderer: addStartStateRenderer },
+    { kind: 'end-state',   collection: 'endStates',         renderers: endStateRenderers as Map<string, AnyRenderer>,      remove: id => store.removeEndState(id),          add: el => store.addEndState(el),          addRenderer: addEndStateRenderer },
+    { kind: 'seq-diagram', collection: 'sequenceDiagrams',  renderers: seqDiagramRenderers as Map<string, AnyRenderer>,    remove: id => store.removeSequenceDiagram(id),   add: el => store.addSequenceDiagram(el),   addRenderer: addSeqDiagramRenderer },
+    { kind: 'seq-fragment',collection: 'combinedFragments', renderers: seqFragmentRenderers as Map<string, AnyRenderer>,   remove: id => store.removeCombinedFragment(id),  add: el => store.addCombinedFragment(el),  addRenderer: addSeqFragmentRenderer },
+    { kind: 'class',       collection: 'classes',           renderers: classRenderers as Map<string, AnyRenderer>,         remove: id => store.removeClass(id),             add: el => store.addClass(el),             addRenderer: addClassRenderer },
   ]
 }
 initElementDescriptors()
@@ -1341,34 +1342,18 @@ function wireSeqFragmentInteraction(r: CombinedFragmentRenderer, frag: CombinedF
 // ─── Store → renderer sync ────────────────────────────────────────────────────
 
 store.on(ev => {
-  if (ev.type === 'class:add')        addClassRenderer(ev.payload as UmlClass)
-  if (ev.type === 'class:remove')     { classRenderers.get(ev.payload as string)?.el.remove(); classRenderers.delete(ev.payload as string) }
-  if (ev.type === 'package:add')      addPackageRenderer(ev.payload as UmlPackage)
-  if (ev.type === 'package:remove')   { pkgRenderers.get(ev.payload as string)?.el.remove(); pkgRenderers.delete(ev.payload as string) }
-  if (ev.type === 'storage:add')      addStorageRenderer(ev.payload as Storage)
-  if (ev.type === 'storage:remove')   { storageRenderers.get(ev.payload as string)?.el.remove(); storageRenderers.delete(ev.payload as string) }
-  if (ev.type === 'actor:add')        addActorRenderer(ev.payload as Actor)
-  if (ev.type === 'actor:remove')     { actorRenderers.get(ev.payload as string)?.el.remove(); actorRenderers.delete(ev.payload as string) }
-  if (ev.type === 'queue:add')        addQueueRenderer(ev.payload as Queue)
-  if (ev.type === 'queue:remove')     { queueRenderers.get(ev.payload as string)?.el.remove(); queueRenderers.delete(ev.payload as string) }
-  if (ev.type === 'use-case:add')      addUseCaseRenderer(ev.payload as UseCase)
-  if (ev.type === 'use-case:remove')   { ucRenderers.get(ev.payload as string)?.el.remove(); ucRenderers.delete(ev.payload as string) }
-  if (ev.type === 'uc-system:add')     addUCSystemRenderer(ev.payload as UCSystem)
-  if (ev.type === 'uc-system:remove')  { ucSystemRenderers.get(ev.payload as string)?.el.remove(); ucSystemRenderers.delete(ev.payload as string) }
-  if (ev.type === 'state:add')        addStateRenderer(ev.payload as State)
-  if (ev.type === 'state:remove')     { stateRenderers.get(ev.payload as string)?.el.remove(); stateRenderers.delete(ev.payload as string) }
-  if (ev.type === 'start-state:add')   addStartStateRenderer(ev.payload as StartState)
-  if (ev.type === 'start-state:remove') { startStateRenderers.get(ev.payload as string)?.el.remove(); startStateRenderers.delete(ev.payload as string) }
-  if (ev.type === 'end-state:add')     addEndStateRenderer(ev.payload as EndState)
-  if (ev.type === 'end-state:remove')  { endStateRenderers.get(ev.payload as string)?.el.remove(); endStateRenderers.delete(ev.payload as string) }
-  if (ev.type === 'seq-diagram:add')   { addSeqDiagramRenderer(ev.payload as SequenceDiagram); refreshSequenceConnections() }
+  // Generic :add / :remove handling for all element types
+  for (const desc of ELEMENTS) {
+    if (ev.type === `${desc.kind}:add`)    { desc.addRenderer(ev.payload); break }
+    if (ev.type === `${desc.kind}:remove`) { desc.renderers.get(ev.payload as string)?.destroy(); desc.renderers.delete(ev.payload as string); break }
+  }
+
+  // Special side-effects for specific events
+  if (ev.type === 'seq-diagram:add')    refreshSequenceConnections()
   if (ev.type === 'seq-diagram:update') { refreshSequenceConnections(); refreshLifelineAddButtons() }
-  if (ev.type === 'seq-diagram:remove') { seqDiagramRenderers.get(ev.payload as string)?.destroy(); seqDiagramRenderers.delete(ev.payload as string) }
-  if (ev.type === 'seq-fragment:add')  addSeqFragmentRenderer(ev.payload as CombinedFragment)
-  if (ev.type === 'seq-fragment:remove') { seqFragmentRenderers.get(ev.payload as string)?.destroy(); seqFragmentRenderers.delete(ev.payload as string) }
   if (ev.type === 'connection:add')   { addConnectionRenderer(ev.payload as Connection); refreshConnections() }
   if (ev.type === 'connection:remove') {
-    connRenderers.get(ev.payload as string)?.el.remove()
+    connRenderers.get(ev.payload as string)?.destroy()
     connRenderers.delete(ev.payload as string)
     refreshConnections()
   }
@@ -1383,12 +1368,15 @@ store.on(ev => {
     selection.clear()
   }
 
-  if (['class:update', 'package:update', 'storage:update', 'actor:update', 'queue:update', 'connection:update', 'use-case:update', 'uc-system:update', 'state:update', 'start-state:update', 'end-state:update'].includes(ev.type)) {
+  if (ev.type.endsWith(':update') && !ev.type.startsWith('seq-') && !ev.type.startsWith('viewport') && ev.type !== 'connection:update') {
     refreshConnections()
     showPropertiesForSelection()
   }
-
-  if (['seq-fragment:update'].includes(ev.type)) {
+  if (ev.type === 'connection:update') {
+    refreshConnections()
+    showPropertiesForSelection()
+  }
+  if (ev.type === 'seq-fragment:update') {
     refreshSequenceConnections()
   }
 
@@ -1561,59 +1549,51 @@ function refreshSequenceConnections() {
   }
 }
 
-function refreshSeqDiagram(sd: SequenceDiagram, sdR: SequenceDiagramRenderer) {
-  const lifelines = sd.lifelines
-  if (!lifelines.length) return
+// ─── Sequence diagram helpers ────────────────────────────────────────────────
 
-  const lifelineMap = new Map(lifelines.map(ll => [ll.id, ll]))
+interface MsgEvent {
+  slotTopY: number
+  absY: number
+  srcId: string
+  tgtId: string | null
+  kind: SequenceMessage['kind']
+  msgIdx: number
+  msg: SequenceMessage
+  globalSlot: number
+}
 
-  const SLOT_H = SEQ_MSG_ROW_H  // 40px
-
-  // Baseline Y is fixed for the container: sd.position.y + SEQ_HEADER_H
-  const baselineY = sd.position.y + SEQ_HEADER_H
-
-  type MsgEvent = {
-    slotTopY: number
-    absY: number
-    srcId: string
-    tgtId: string | null
-    kind: SequenceMessage['kind']
-    msgIdx: number
-    msg: SequenceMessage
-    globalSlot: number
-  }
-
-  // Assign ephemeral slots to messages lacking explicit slotIndex
-  const sortedLLs = [...lifelines].sort((a, b) => a.position.x - b.position.x)
-  {
-    const allHaveSlotIndex = lifelines.every(ll => ll.messages.every(m => m.slotIndex !== undefined))
-    if (!allHaveSlotIndex) {
-      const maxMsgs = Math.max(...lifelines.map(ll => ll.messages.length), 0)
-      let slot = 0
-      slot = 0
-      for (let round = 0; round < maxMsgs; round++) {
-        for (const ll of sortedLLs) {
-          const msg = ll.messages[round]
-          if (!msg) continue
-          if (msg.slotIndex === undefined) {
-            ;(msg as SequenceMessage & { _ephemeralSlot?: number })._ephemeralSlot = slot++
-          } else {
-            slot = Math.max(slot, msg.slotIndex + 1)
-          }
-        }
+/** Assign ephemeral slots to messages that lack explicit slotIndex. */
+function assignEphemeralSlots(lifelines: SequenceLifeline[]) {
+  const allHaveSlotIndex = lifelines.every(ll => ll.messages.every(m => m.slotIndex !== undefined))
+  if (allHaveSlotIndex) return
+  const sorted = [...lifelines].sort((a, b) => a.position.x - b.position.x)
+  const maxMsgs = Math.max(...lifelines.map(ll => ll.messages.length), 0)
+  let slot = 0
+  for (let round = 0; round < maxMsgs; round++) {
+    for (const ll of sorted) {
+      const msg = ll.messages[round]
+      if (!msg) continue
+      if (msg.slotIndex === undefined) {
+        ;(msg as SequenceMessage & { _ephemeralSlot?: number })._ephemeralSlot = slot++
+      } else {
+        slot = Math.max(slot, msg.slotIndex + 1)
       }
     }
   }
+}
 
+/** Collect all messages as absolute-Y events, sorted by slot position. */
+function collectMsgEvents(lifelines: SequenceLifeline[], baselineY: number, slotH: number): MsgEvent[] {
+  const lifelineMap = new Map(lifelines.map(ll => [ll.id, ll]))
   const events: MsgEvent[] = []
   for (const srcLL of lifelines) {
     srcLL.messages.forEach((msg, idx) => {
       const ephemeral = (msg as SequenceMessage & { _ephemeralSlot?: number })._ephemeralSlot
       const globalSlot = msg.slotIndex ?? ephemeral ?? idx
-      const slotTopY = baselineY + globalSlot * SLOT_H
+      const slotTopY = baselineY + globalSlot * slotH
       events.push({
         slotTopY,
-        absY: slotTopY + SLOT_H / 2,
+        absY: slotTopY + slotH / 2,
         srcId: srcLL.id,
         tgtId: msg.targetLifelineId,
         kind: msg.kind,
@@ -1624,24 +1604,25 @@ function refreshSeqDiagram(sd: SequenceDiagram, sdR: SequenceDiagramRenderer) {
     })
   }
   events.sort((a, b) => a.slotTopY - b.slotTopY || (lifelineMap.get(a.srcId)?.position.x ?? 0) - (lifelineMap.get(b.srcId)?.position.x ?? 0))
+  return events
+}
 
+/** Compute activation bar spans (absolute Y) per lifeline from sorted events. */
+function computeActiveBars(events: MsgEvent[], lifelines: SequenceLifeline[], slotH: number) {
   interface BarState {
     openY: number | null
     spans: { yStart: number; yEnd: number }[]
     lastTouchedSlotTop: number | null
   }
-
   const barState = new Map<string, BarState>(
     lifelines.map(ll => [ll.id, { openY: null, spans: [], lastTouchedSlotTop: null }])
   )
-
   function openBar(llId: string, slotTopY: number) {
     const s = barState.get(llId)
     if (!s) return
     if (s.openY === null) s.openY = slotTopY
     if (s.lastTouchedSlotTop === null || slotTopY > s.lastTouchedSlotTop) s.lastTouchedSlotTop = slotTopY
   }
-
   function closeBar(llId: string, closeAbsY: number, slotTopY: number) {
     const s = barState.get(llId)
     if (!s) return
@@ -1651,16 +1632,10 @@ function refreshSeqDiagram(sd: SequenceDiagram, sdR: SequenceDiagramRenderer) {
     }
     if (s.lastTouchedSlotTop === null || slotTopY > s.lastTouchedSlotTop) s.lastTouchedSlotTop = slotTopY
   }
-
+  const lifelineMap = new Map(lifelines.map(ll => [ll.id, ll]))
   for (const ev of events) {
     const tgtLL = ev.tgtId ? lifelineMap.get(ev.tgtId) : null
-
-    if (ev.kind === 'self') {
-      // Self-calls keep the bar open — they don't end an active zone
-      openBar(ev.srcId, ev.absY)
-      continue
-    }
-
+    if (ev.kind === 'self') { openBar(ev.srcId, ev.absY); continue }
     if (ev.kind === 'return') {
       if (tgtLL) {
         closeBar(ev.srcId, ev.absY, ev.slotTopY)
@@ -1669,21 +1644,33 @@ function refreshSeqDiagram(sd: SequenceDiagram, sdR: SequenceDiagramRenderer) {
       }
       continue
     }
-
     if (!tgtLL) continue
-
     openBar(ev.srcId, ev.absY)
     openBar(ev.tgtId!, ev.absY)
   }
-
+  // Close any still-open bars
   for (const ll of lifelines) {
     const s = barState.get(ll.id)!
     if (s.openY !== null) {
       const lastY = s.lastTouchedSlotTop ?? s.openY
-      s.spans.push({ yStart: s.openY, yEnd: lastY + SLOT_H })
+      s.spans.push({ yStart: s.openY, yEnd: lastY + slotH })
       s.openY = null
     }
   }
+  return barState
+}
+
+function refreshSeqDiagram(sd: SequenceDiagram, sdR: SequenceDiagramRenderer) {
+  const lifelines = sd.lifelines
+  if (!lifelines.length) return
+
+  const lifelineMap = new Map(lifelines.map(ll => [ll.id, ll]))
+  const SLOT_H = SEQ_MSG_ROW_H
+  const baselineY = sd.position.y + SEQ_HEADER_H
+
+  assignEphemeralSlots(lifelines)
+  const events = collectMsgEvents(lifelines, baselineY, SLOT_H)
+  const barState = computeActiveBars(events, lifelines, SLOT_H)
 
   // Convert abs spans to local (relative to container top, not lifeline), merge, push to renderers
   for (const ll of lifelines) {

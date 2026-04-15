@@ -106,4 +106,5 @@ export class QueueRenderer {
   setSelected(selected: boolean) {
     this.el.classList.toggle('selected', selected)
   }
+  destroy() { this.el.remove() }
 }
