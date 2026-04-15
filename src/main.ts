@@ -84,7 +84,31 @@ function getSvgPoint(e: MouseEvent): DOMPoint {
 
 // ─── Controllers ──────────────────────────────────────────────────────────────
 
-const drag    = new DragController(store, getSvgPoint)
+/**
+ * Returns all non-package element ids whose center lies strictly within the
+ * given container package's current rendered rect. Used by DragController.
+ */
+function getContainedElements(pkgId: string): Array<{ kind: ElementKind; id: string }> {
+  const d = store.state
+  const pkg = d.packages.find(p => p.id === pkgId)
+  if (!pkg) return []
+  const pkgR = pkgRenderers.get(pkgId)
+  const { w, h } = pkgR?.getRenderedSize() ?? pkg.size
+  const { x, y } = pkg.position
+  const result: Array<{ kind: ElementKind; id: string }> = []
+  const inside = (el: { position: { x: number; y: number }; size: { w: number; h: number } }) => {
+    const cx = el.position.x + el.size.w / 2
+    const cy = el.position.y + el.size.h / 2
+    return cx > x && cx < x + w && cy > y && cy < y + h
+  }
+  d.classes.forEach(e  => { if (inside(e)) result.push({ kind: 'class',   id: e.id }) })
+  d.storages.forEach(e => { if (inside(e)) result.push({ kind: 'storage', id: e.id }) })
+  d.actors.forEach(e   => { if (inside(e)) result.push({ kind: 'actor',   id: e.id }) })
+  d.queues.forEach(e   => { if (inside(e)) result.push({ kind: 'queue',   id: e.id }) })
+  return result
+}
+
+const drag    = new DragController(store, getSvgPoint, getContainedElements)
 const resize  = new ResizeController(store, getSvgPoint, getMinSize, () => store.state.viewport.zoom)
 const connect = new ConnectionController(store, svg, viewGroup, getSvgPoint, showConnectionPopover)
 
@@ -250,14 +274,17 @@ function showPropertiesForSelection() {
   const item = items[0]
   const d = store.state
 
+  // Package: no properties panel
+  if (item.kind === 'package') {
+    hideElementPropertiesPanel(); return
+  }
+
   let el: AnyElement & { multiInstance?: boolean } | undefined
   let updateFn: (patch: { multiInstance: boolean }) => void = () => {}
 
   if (item.kind === 'class') {
     const c = d.classes.find(c => c.id === item.id)
     if (c) { el = c as AnyElement; updateFn = p => store.updateClass(item.id, p) }
-  } else if (item.kind === 'package') {
-    hideElementPropertiesPanel(); return
   } else if (item.kind === 'storage') {
     const s = d.storages.find(s => s.id === item.id)
     if (s) { el = s; updateFn = p => store.updateStorage(item.id, p) }

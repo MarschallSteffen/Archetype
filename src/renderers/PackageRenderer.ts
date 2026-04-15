@@ -1,12 +1,12 @@
 import type { UmlPackage } from '../entities/Package.ts'
 import type { DiagramStore } from '../store/DiagramStore.ts'
 import { PORT_SIDES, portPosition } from './ports.ts'
-import { svgEl, renderPortsInto, updatePortPositions, estimateTextWidth } from './svgUtils.ts'
+import { svgEl, renderPortsInto, updatePortPositions } from './svgUtils.ts'
 
-const TAB_H = 20
-const TAB_W = 80
-const MIN_W = 120
-const MIN_H = 60
+const TAB_H   = 20
+const TAB_PAD = 8    // horizontal padding on each side of the name in the tab
+const MIN_W   = 120
+const MIN_H   = 60
 
 export class PackageRenderer {
   readonly el: SVGGElement
@@ -50,15 +50,21 @@ export class PackageRenderer {
 
   update(pkg: UmlPackage) {
     const { position: { x, y }, size: { w, h } } = pkg
-    const minW = Math.max(MIN_W, estimateTextWidth(pkg.name) + TAB_W)
-    this.computedW = Math.max(w, minW)
+    this.computedW = Math.max(w, MIN_W)
     this.computedH = Math.max(h, MIN_H)
 
     this.el.setAttribute('transform', `translate(${x},${y})`)
 
+    // Set text first so getComputedTextLength() returns the actual rendered width
+    this.nameText.textContent = pkg.name
+    this.nameText.setAttribute('x', String(TAB_PAD))
+    this.nameText.setAttribute('y', String(-TAB_H / 2))
+
+    const tabW = Math.ceil(this.nameText.getComputedTextLength()) + TAB_PAD * 2
+
     this.tab.setAttribute('x', '0')
     this.tab.setAttribute('y', String(-TAB_H))
-    this.tab.setAttribute('width', String(TAB_W))
+    this.tab.setAttribute('width', String(tabW))
     this.tab.setAttribute('height', String(TAB_H))
     this.tab.setAttribute('rx', '4')
 
@@ -66,17 +72,13 @@ export class PackageRenderer {
     this.bg.setAttribute('height', String(this.computedH))
     this.bg.setAttribute('rx', '4')
 
-    this.nameText.textContent = pkg.name
-    this.nameText.setAttribute('x', '8')
-    this.nameText.setAttribute('y', String(-TAB_H / 2))
-
     updatePortPositions(this.portsGroup, this.computedW, this.computedH, portPosition)
   }
 
   getRenderedSize() { return { w: this.computedW, h: this.computedH } }
 
   getContentMinSize() {
-    return { w: Math.max(MIN_W, estimateTextWidth(this.pkg.name) + TAB_W), h: MIN_H }
+    return { w: MIN_W, h: MIN_H }
   }
 
   setSelected(selected: boolean) {

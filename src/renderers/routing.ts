@@ -130,8 +130,11 @@ function innerWaypoints(
       if (inFront) {
         // I-shape: stubs on the same Y → straight horizontal line, no waypoints needed
         if (Math.abs(sy - ty) < 2) return []
-        // Z-shape: exit at source level, cross vertically, enter at target level
-        return [[snap(sx), snap(sy)], [snap(tx), snap(sy)], [snap(tx), snap(ty)]]
+        // U-shape: crossbar at the midpoint between the two facing element edges
+        const midX = snap(sdx > 0
+          ? (srcRect.x + srcRect.w + tgtRect.x) / 2
+          : (tgtRect.x + tgtRect.w + srcRect.x) / 2)
+        return [[midX, snap(sy)], [midX, snap(ty)]]
       } else {
         // Target is behind — outer-U cleared past both elements
         const outerX = sdx > 0
@@ -145,8 +148,11 @@ function innerWaypoints(
       if (inFront) {
         // I-shape: stubs on the same X → straight vertical line, no waypoints needed
         if (Math.abs(sx - tx) < 2) return []
-        // Z-shape: exit at source level, cross horizontally, enter at target level
-        return [[snap(sx), snap(sy)], [snap(sx), snap(ty)], [snap(tx), snap(ty)]]
+        // U-shape: crossbar at the midpoint between the two facing element edges
+        const midY = snap(sdy > 0
+          ? (srcRect.y + srcRect.h + tgtRect.y) / 2
+          : (tgtRect.y + tgtRect.h + srcRect.y) / 2)
+        return [[snap(sx), midY], [snap(tx), midY]]
       } else {
         const outerY = sdy > 0
           ? snap(Math.max(srcRect.y + srcRect.h, tgtRect.y + tgtRect.h) + MARGIN)
@@ -214,7 +220,7 @@ function routeScore(src: Rect, sp: PortSide, tgt: Rect, tp: PortSide): number {
         ? Math.abs(sy - ty) < 2
         : Math.abs(sx - tx) < 2
       turns = aligned ? 0 : 1
-      shapePenalty = aligned ? 0 : 1500   // U-shape costs more than L
+      shapePenalty = aligned ? 0 : 1500
     } else {
       // Target is behind — outer-U is very costly
       turns = 2
@@ -238,6 +244,15 @@ function routeScore(src: Rect, sp: PortSide, tgt: Rect, tp: PortSide): number {
     }
     turns = cornerOk ? 1 : 2
     shapePenalty = cornerOk ? 0 : 3000
+
+    // Discourage L-shapes where either leg is too short to look clean.
+    // A leg shorter than STUB + CORNER_R means the arc would compress into the stub.
+    if (cornerOk) {
+      const minLeg = STUB + CORNER_R
+      const legA = sdy === 0 ? Math.abs(tx - sx) : Math.abs(ty - sy)
+      const legB = sdy === 0 ? Math.abs(ty - sy) : Math.abs(tx - sx)
+      if (legA < minLeg || legB < minLeg) shapePenalty += 1600
+    }
   }
 
   // Actual path length through computed waypoints
@@ -252,20 +267,54 @@ function routeScore(src: Rect, sp: PortSide, tgt: Rect, tp: PortSide): number {
 }
 
 /**
+ * Returns the two port sides of `a` that face toward `b`.
+ * "Facing" = the side whose outward direction points toward the center of `b`.
+ *
+ * We compare the center-to-center vector with each axis:
+ *   - dominant axis  → the single side in that direction (e.g. cx>0 → 'e')
+ *   - secondary axis → the single side in that direction (e.g. cy>0 → 's')
+ *
+ * This always returns exactly 2 sides, filtered by the caller's allowed set.
+ */
+function facingPorts(a: Rect, b: Rect, allowed: PortSide[]): PortSide[] {
+  const acx = a.x + a.w / 2
+  const acy = a.y + a.h / 2
+  const bcx = b.x + b.w / 2
+  const bcy = b.y + b.h / 2
+  const dx = bcx - acx
+  const dy = bcy - acy
+
+  // Primary: axis with larger absolute offset. Secondary: the other axis.
+  const hSide: PortSide = dx >= 0 ? 'e' : 'w'
+  const vSide: PortSide = dy >= 0 ? 's' : 'n'
+
+  const candidates: PortSide[] = Math.abs(dx) >= Math.abs(dy)
+    ? [hSide, vSide]   // more horizontal → horizontal port is primary
+    : [vSide, hSide]   // more vertical   → vertical port is primary
+
+  // Keep only what the element's config allows; fall back to full allowed set
+  const filtered = candidates.filter(s => allowed.includes(s))
+  return filtered.length > 0 ? filtered : allowed
+}
+
+/**
  * Pick the best (srcPort, tgtPort) pair.
- * Scores all combinations of the allowed port sides and returns the lowest-cost one.
- * Pass `srcSides`/`tgtSides` to restrict which port sides are considered (e.g. queue only allows e/w).
- * Defaults to all four cardinal sides when not specified.
+ * Candidates are restricted to the two ports on each element that face toward
+ * the other element, intersected with each element's allowed sides.
+ * Pass `srcSides`/`tgtSides` to further restrict (e.g. queue only allows e/w).
  */
 export function bestPortPair(
   src: Rect, tgt: Rect,
   srcSides: PortSide[] = PORT_SIDES as unknown as PortSide[],
   tgtSides: PortSide[] = PORT_SIDES as unknown as PortSide[],
 ): { src: PortSide; tgt: PortSide } {
-  let best = { src: (srcSides[0] ?? 'e') as PortSide, tgt: (tgtSides[0] ?? 'w') as PortSide }
+  const srcCandidates = facingPorts(src, tgt, srcSides)
+  const tgtCandidates = facingPorts(tgt, src, tgtSides)
+
+  let best = { src: srcCandidates[0], tgt: tgtCandidates[0] }
   let bestScore = Infinity
-  for (const sp of srcSides) {
-    for (const tp of tgtSides) {
+  for (const sp of srcCandidates) {
+    for (const tp of tgtCandidates) {
       const score = routeScore(src, sp, tgt, tp)
       if (score < bestScore) { bestScore = score; best = { src: sp, tgt: tp } }
     }

@@ -96,8 +96,8 @@ export function showConnectionPopover(
     `).join('')
   }
 
-  // Flip button: only shown for single-direction storage connections (not bidirectional, not request)
-  const showFlip = onFlip && isStorage && activeType !== 'read-write'
+  // Flip button: shown for everything except read-write (the only bidirectional type)
+  const showFlip = onFlip && activeType !== 'read-write'
   const flipBtn = showFlip ? `<button class="conn-flip-btn" title="Flip / reverse arrow direction">⇄</button>` : ''
 
   const multHtml = showMultiplicity ? `
