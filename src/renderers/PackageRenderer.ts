@@ -1,7 +1,7 @@
 import type { UmlPackage } from '../entities/Package.ts'
 import type { DiagramStore } from '../store/DiagramStore.ts'
 import { PORT_SIDES, portPosition } from './ports.ts'
-import { svgEl, renderPortsInto, updatePortPositions } from './svgUtils.ts'
+import { svgEl, renderPortsInto, updatePortPositions, estimateTextWidth } from './svgUtils.ts'
 
 const TAB_H   = 20
 const TAB_PAD = 8    // horizontal padding on each side of the name in the tab
@@ -40,6 +40,10 @@ export class PackageRenderer {
     renderPortsInto(this.portsGroup, PORT_SIDES, (side, e) => this.onPortMousedown(this.pkg, side, e))
     this.update(pkg)
 
+    // Re-run update after first paint so getComputedTextLength() returns the
+    // real rendered width (it returns 0 before the element is in the DOM).
+    requestAnimationFrame(() => this.update(this.pkg))
+
     _store.on(ev => {
       if (ev.type === 'package:update' && (ev.payload as UmlPackage).id === pkg.id) {
         this.pkg = ev.payload as UmlPackage
@@ -60,7 +64,8 @@ export class PackageRenderer {
     this.nameText.setAttribute('x', String(TAB_PAD))
     this.nameText.setAttribute('y', String(-TAB_H / 2))
 
-    const tabW = Math.ceil(this.nameText.getComputedTextLength()) + TAB_PAD * 2
+    const measured = this.nameText.getComputedTextLength()
+    const tabW = Math.ceil(measured > 0 ? measured : estimateTextWidth(pkg.name)) + TAB_PAD * 2
 
     this.tab.setAttribute('x', '0')
     this.tab.setAttribute('y', String(-TAB_H))

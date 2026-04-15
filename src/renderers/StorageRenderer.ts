@@ -3,7 +3,6 @@ import type { DiagramStore } from '../store/DiagramStore.ts'
 import { PORT_SIDES, portPosition } from './ports.ts'
 import { svgEl, renderPortsInto, updatePortPositions, renderShadow, estimateTextWidth } from './svgUtils.ts'
 
-const CORNER_R = 16
 const MIN_H = 40
 
 export class StorageRenderer {
@@ -49,18 +48,19 @@ export class StorageRenderer {
 
   update(storage: Storage) {
     const { position: { x, y }, size: { w, h }, multiInstance } = storage
-    const minW = Math.max(80, estimateTextWidth(storage.name) + CORNER_R * 2)
-    this.computedW = Math.max(w, minW)
     this.computedH = Math.max(h, MIN_H)
+    const rx = this.computedH / 2
+    const minW = Math.max(80, estimateTextWidth(storage.name) + rx * 2)
+    this.computedW = Math.max(w, minW)
 
     this.el.setAttribute('transform', `translate(${x},${y})`)
 
-    renderShadow(this.shadowGroup, multiInstance, 'storage-shadow-shape', this.computedW, this.computedH, CORNER_R)
+    renderShadow(this.shadowGroup, multiInstance, 'storage-shadow-shape', this.computedW, this.computedH, rx)
 
     this.bg.setAttribute('width', String(this.computedW))
     this.bg.setAttribute('height', String(this.computedH))
-    this.bg.setAttribute('rx', String(CORNER_R))
-    this.bg.setAttribute('ry', String(CORNER_R))
+    this.bg.setAttribute('rx', String(rx))
+    this.bg.setAttribute('ry', String(rx))
 
     this.nameText.textContent = storage.name
     this.nameText.setAttribute('x', String(this.computedW / 2))
@@ -72,7 +72,8 @@ export class StorageRenderer {
   getRenderedSize() { return { w: this.computedW, h: this.computedH } }
 
   getContentMinSize() {
-    const minW = Math.max(80, estimateTextWidth(this.storage.name) + CORNER_R * 2)
+    const rx = MIN_H / 2
+    const minW = Math.max(80, estimateTextWidth(this.storage.name) + rx * 2)
     return { w: minW, h: MIN_H }
   }
 

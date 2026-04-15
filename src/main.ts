@@ -415,10 +415,16 @@ function wireElementInteraction(
   })
 
   el.addEventListener('dblclick', e => {
-    const target = e.target as SVGTextElement
-    if (!target.classList.contains(nameSelector)) return
+    const target = e.target as Element
+    // Ignore clicks on ports, member text (handled separately for class), and foreign objects
+    if (target.classList.contains('port') || target.classList.contains('port-hit')) return
+    if (target.classList.contains('member-text')) return
+    if (target.tagName === 'foreignObject' || (target as Element).closest?.('foreignObject')) return
     e.stopPropagation()
-    inlineEditor.edit(target, getName(), updateName)
+    // Find the name text node to anchor the inline editor
+    const nameEl = el.querySelector<SVGTextElement>(`.${nameSelector}`)
+    if (!nameEl) return
+    inlineEditor.edit(nameEl, getName(), updateName)
   })
 }
 

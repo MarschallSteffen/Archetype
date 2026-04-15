@@ -6,7 +6,8 @@
  */
 
 export const SVG_NS = 'http://www.w3.org/2000/svg'
-export const PORT_R = 5
+export const PORT_R     = 8   // visible radius
+export const PORT_HIT_R = 14  // invisible hit-area radius
 export const SHADOW_OFFSET = 6
 
 /**
@@ -33,6 +34,18 @@ export function renderPortsInto(
   onPortMousedown: (side: string, e: MouseEvent) => void,
 ): void {
   sides.forEach(side => {
+    // Transparent hit area — larger than the visible dot for easier clicking
+    const hit = svgEl('circle')
+    hit.classList.add('port-hit')
+    hit.setAttribute('r', String(PORT_HIT_R))
+    hit.setAttribute('fill', 'transparent')
+    hit.setAttribute('stroke', 'none')
+    hit.dataset.port = side
+    hit.addEventListener('mousedown', e => {
+      e.stopPropagation()
+      onPortMousedown(side, e)
+    })
+
     const circle = svgEl('circle')
     circle.classList.add('port')
     circle.setAttribute('r', String(PORT_R))
@@ -41,6 +54,8 @@ export function renderPortsInto(
       e.stopPropagation()
       onPortMousedown(side, e)
     })
+
+    group.appendChild(hit)
     group.appendChild(circle)
   })
 }
@@ -55,7 +70,7 @@ export function updatePortPositions(
   h: number,
   portPositionFn: (side: string, w: number, h: number) => { x: number; y: number },
 ): void {
-  group.querySelectorAll<SVGCircleElement>('.port').forEach(circle => {
+  group.querySelectorAll<SVGCircleElement>('.port, .port-hit').forEach(circle => {
     const side = circle.dataset.port!
     const { x, y } = portPositionFn(side, w, h)
     circle.setAttribute('cx', String(x))
