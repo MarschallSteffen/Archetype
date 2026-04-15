@@ -1704,6 +1704,8 @@ function refreshSeqDiagram(sd: SequenceDiagram, sdR: SequenceDiagramRenderer) {
     })
 
     sdR.getLifelineRenderer(ll.id)?.setMsgLocalYs(msgSlotLocalYs)
+    // Re-run update so computedH reflects the new msgLocalYs (e.g. after message deletion)
+    sdR.getLifelineRenderer(ll.id)?.update(ll)
 
     // Collect ALL events touching this lifeline (as source or target) for slot placement
     const touchingYs = events
