@@ -1,6 +1,6 @@
 import { DiagramStore } from './store/DiagramStore.ts'
 import { loadSavedTheme } from './themes/catppuccin.ts'
-import { loadDiagram, saveDiagram, saveDiagramToFile, loadDiagramFromFile } from './serialization/mermaid.ts'
+import { loadDiagram, saveDiagram, openAndSaveToFile, closeActiveFile, getActiveFileName, loadDiagramFromFile, exportDiagramToPng } from './serialization/mermaid.ts'
 import { ClassRenderer } from './renderers/ClassRenderer.ts'
 import { PackageRenderer } from './renderers/PackageRenderer.ts'
 import { StorageRenderer } from './renderers/StorageRenderer.ts'
@@ -13,6 +13,7 @@ import { ConnectionController } from './interaction/ConnectionController.ts'
 import { SelectionManager } from './interaction/SelectionManager.ts'
 import { InlineEditor } from './interaction/InlineEditor.ts'
 import { Toolbar } from './ui/Toolbar.ts'
+import { FileMenu } from './ui/FileMenu.ts'
 import { showConnectionPopover } from './ui/ConnectionPopover.ts'
 import { showElementPropertiesPanel, hideElementPropertiesPanel } from './ui/ElementPropertiesPanel.ts'
 import { createUmlClass } from './entities/UmlClass.ts'
@@ -20,6 +21,7 @@ import { createUmlPackage } from './entities/Package.ts'
 import { createStorage } from './entities/Storage.ts'
 import { createActor } from './entities/Actor.ts'
 import { createQueue } from './entities/Queue.ts'
+import { createDiagram } from './entities/Diagram.ts'
 import type { UmlClass } from './entities/UmlClass.ts'
 import type { UmlPackage } from './entities/Package.ts'
 import type { Storage } from './entities/Storage.ts'
@@ -46,11 +48,66 @@ const selection = new SelectionManager()
 const toolbar = new Toolbar(document.getElementById('toolbar')!)
 const inlineEditor = new InlineEditor()
 
+// ─── File menu ─────────────────────────────────────────────────────────────────
+
 // ─── SVG viewport transform group ─────────────────────────────────────────────
 
 const viewGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g')
 viewGroup.id = 'view-group'
 svg.appendChild(viewGroup)
+
+// ─── File menu ─────────────────────────────────────────────────────────────────
+
+const fileMenuCallbacks = {
+  onNew: () => {
+    if (store.state.classes.length || store.state.packages.length ||
+        store.state.storages.length || store.state.actors.length ||
+        store.state.queues.length || store.state.connections.length) {
+      if (!confirm('Create a new diagram? Unsaved changes will be lost.')) return
+    }
+    closeActiveFile()
+    const fresh = createDiagram('Untitled')
+    store.load(fresh)
+    saveDiagram(fresh)
+    fileMenu.setTitle(fresh.name)
+    fileMenu.setFileIndicator(null)
+  },
+  onOpen: () => {
+    loadDiagramFromFile(d => {
+      closeActiveFile()
+      store.load(d)
+      saveDiagram(d)
+      fileMenu.setTitle(d.name ?? 'Untitled')
+      fileMenu.setFileIndicator(null)
+    })
+  },
+  onSave: () => {
+    const d = store.state
+    const name = fileMenu.getTitle() || 'diagram'
+    openAndSaveToFile(d, `${name}.json`).then(saved => {
+      if (saved) fileMenu.setFileIndicator(getActiveFileName())
+    }).catch(console.error)
+  },
+  onSaveAs: () => {
+    const d = store.state
+    const name = fileMenu.getTitle() || 'diagram'
+    openAndSaveToFile(d, `${name}.json`, /* forceNew */ true).then(saved => {
+      if (saved) fileMenu.setFileIndicator(getActiveFileName())
+    }).catch(console.error)
+  },
+  onExportPng: () => {
+    exportDiagramToPng(svg, viewGroup, fileMenu.getTitle() || 'diagram').catch(console.error)
+  },
+  onTitleChange: (title: string) => {
+    store.updateDiagramName(title)
+    saveDiagram(store.state)
+  },
+}
+
+const fileMenu = new FileMenu(document.getElementById('titlebar')!, fileMenuCallbacks)
+
+// Initialise title from loaded diagram
+fileMenu.setTitle(store.state.name ?? 'Untitled')
 
 const pkgLayer     = document.createElementNS('http://www.w3.org/2000/svg', 'g')
 const storageLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g')
@@ -712,13 +769,14 @@ svg.addEventListener('mousedown', e => {
     // Clicked on an element — let its own mousedown handler take over
     return
   }
-  // Clicked on empty canvas — clear selection and close all dialogs
-  if (toolbar.activeTool === 'select') {
-    dismissConnPopover?.()
-    dismissConnPopover = null
-    hideElementPropertiesPanel()
-    selection.clear()
-  }
+  // Clicked on empty canvas — always clear selection and close dialogs
+  dismissConnPopover?.()
+  dismissConnPopover = null
+  hideElementPropertiesPanel()
+  selection.clear()
+
+  // Only start rubber-band in select mode
+  if (toolbar.activeTool !== 'select') return
   const pt = getSvgPoint(e)
   rubberBanding = true
   rubberStart = { x: pt.x, y: pt.y }
@@ -925,24 +983,32 @@ document.addEventListener('keydown', e => {
   }
 })
 
-// ─── Save / Load file ─────────────────────────────────────────────────────────
+// ─── File keyboard shortcuts ──────────────────────────────────────────────────
 
 document.addEventListener('keydown', e => {
   if ((e.target as HTMLElement).closest('input, textarea, [contenteditable]')) return
   const mod = e.ctrlKey || e.metaKey
   if (!mod) return
 
-  if (e.shiftKey && e.key === 'S') {
+  if (!e.shiftKey && !e.altKey && e.key === 'n') {
     e.preventDefault()
-    saveDiagramToFile(store.state)
+    fileMenuCallbacks.onNew()
   }
-
+  if (e.shiftKey && !e.altKey && e.key === 'S') {
+    e.preventDefault()
+    fileMenuCallbacks.onSave()
+  }
+  if (e.shiftKey && e.altKey && e.key === 'S') {
+    e.preventDefault()
+    fileMenuCallbacks.onSaveAs()
+  }
   if (e.shiftKey && e.key === 'O') {
     e.preventDefault()
-    loadDiagramFromFile(d => {
-      store.load(d)
-      saveDiagram(d)
-    })
+    fileMenuCallbacks.onOpen()
+  }
+  if (e.shiftKey && e.key === 'E') {
+    e.preventDefault()
+    fileMenuCallbacks.onExportPng()
   }
 })
 

@@ -12,6 +12,7 @@ import { createActor } from '../entities/Actor.ts'
 import { createQueue } from '../entities/Queue.ts'
 import { createConnection } from '../entities/Connection.ts'
 import type { ConnectionType, Multiplicity, PortSide } from '../entities/Connection.ts'
+import { LATTE } from '../themes/catppuccin.ts'
 
 const CONNECTION_TYPE_MAP: Record<string, ConnectionType> = {
   '--':    'association',
@@ -194,18 +195,191 @@ export function fromMermaid(mmd: string, layoutJson?: string): Diagram {
 
 const LS_JSON = 'diagrams-tool:diagram'
 
-export function saveDiagram(diagram: Diagram) {
-  localStorage.setItem(LS_JSON, JSON.stringify(diagram))
+/** Active file handle for continuous autosave. Null = no file open. */
+let activeFileHandle: FileSystemFileHandle | null = null
+
+export function getActiveFileName(): string | null {
+  return activeFileHandle?.name ?? null
 }
 
-/** Trigger a browser download of the diagram as a .json file. */
-export function saveDiagramToFile(diagram: Diagram) {
+export function saveDiagram(diagram: Diagram) {
+  localStorage.setItem(LS_JSON, JSON.stringify(diagram))
+  // Write to open file handle in background — fire and forget
+  if (activeFileHandle) {
+    writeToHandle(activeFileHandle, diagram).catch(() => {
+      // If the handle becomes invalid (file deleted etc.), silently drop it
+      activeFileHandle = null
+    })
+  }
+}
+
+async function writeToHandle(handle: FileSystemFileHandle, diagram: Diagram): Promise<void> {
+  const writable = await handle.createWritable()
+  await writable.write(JSON.stringify(diagram, null, 2))
+  await writable.close()
+}
+
+/**
+ * Open the native Save File picker, store the handle, and write immediately.
+ * Subsequent calls to `saveDiagram` will autosave to this file.
+ * Pass `forceNew = true` to always show the picker (Save As behaviour).
+ */
+export async function openAndSaveToFile(
+  diagram: Diagram,
+  suggestedName = 'diagram.json',
+  forceNew = false,
+): Promise<boolean> {
+  if (!('showSaveFilePicker' in window)) {
+    // Fallback for browsers without File System Access API
+    saveDiagramToFile(diagram, suggestedName)
+    return true
+  }
+  if (activeFileHandle && !forceNew) {
+    // Already have a handle — just write
+    await writeToHandle(activeFileHandle, diagram)
+    return true
+  }
+  try {
+    const handle = await (window as typeof window & {
+      showSaveFilePicker: (opts?: unknown) => Promise<FileSystemFileHandle>
+    }).showSaveFilePicker({
+      suggestedName,
+      types: [{ description: 'Diagram JSON', accept: { 'application/json': ['.json'] } }],
+    })
+    activeFileHandle = handle
+    await writeToHandle(handle, diagram)
+    return true
+  } catch (err: unknown) {
+    // User cancelled the picker
+    if (err instanceof DOMException && err.name === 'AbortError') return false
+    throw err
+  }
+}
+
+/** Close the active file handle (e.g. on New diagram). */
+export function closeActiveFile() {
+  activeFileHandle = null
+}
+
+/** Trigger a browser download of the diagram as a .json file (no handle). */
+export function saveDiagramToFile(diagram: Diagram, filename = 'diagram.json') {
   const json = JSON.stringify(diagram, null, 2)
   const blob = new Blob([json], { type: 'application/json' })
+  triggerDownload(blob, filename)
+}
+
+/**
+ * Render the current SVG diagram to a PNG and trigger a download.
+ *
+ * @param svgEl      The live <svg> element
+ * @param viewGroup  The <g id="view-group"> that holds all diagram content
+ * @param filename   Download filename (without extension)
+ */
+export async function exportDiagramToPng(
+  svgEl: SVGSVGElement,
+  viewGroup: SVGGElement,
+  filename = 'diagram',
+): Promise<void> {
+  const PADDING = 48  // spacious padding around the content
+
+  // ── 1. Compute bounding box of all diagram content ────────────────────
+  // Temporarily reset the transform to identity so getBBox gives diagram-space coords
+  const savedTransform = viewGroup.getAttribute('transform') ?? ''
+  viewGroup.setAttribute('transform', '')
+
+  const bbox = viewGroup.getBBox()
+
+  viewGroup.setAttribute('transform', savedTransform)
+
+  if (bbox.width === 0 || bbox.height === 0) {
+    // Nothing to export
+    return
+  }
+
+  const contentW = Math.ceil(bbox.width  + PADDING * 2)
+  const contentH = Math.ceil(bbox.height + PADDING * 2)
+  const offsetX  = bbox.x - PADDING
+  const offsetY  = bbox.y - PADDING
+
+  // ── 2. Build a standalone SVG string ─────────────────────────────────
+  // Clone the entire SVG and patch its viewBox / size to the content area
+  const clonedSvg = svgEl.cloneNode(true) as SVGSVGElement
+  clonedSvg.setAttribute('width',   String(contentW))
+  clonedSvg.setAttribute('height',  String(contentH))
+  clonedSvg.setAttribute('viewBox', `${offsetX} ${offsetY} ${contentW} ${contentH}`)
+
+  // Remove the rubber-band rect and snap guides from the clone
+  clonedSvg.querySelectorAll('.rubber-band, .snap-guides').forEach(el => el.remove())
+
+  // Reset the view-group transform (we want it at 1:1 scale, no pan offset)
+  const clonedViewGroup = clonedSvg.querySelector('#view-group') as SVGGElement | null
+  if (clonedViewGroup) clonedViewGroup.removeAttribute('transform')
+
+  // Inline all computed CSS styles from the live document into the clone
+  // so the PNG looks the same regardless of external stylesheet availability.
+  const styleText = collectStyles(svgEl)
+  const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style')
+  styleEl.textContent = styleText
+  clonedSvg.prepend(styleEl)
+
+  const svgString = new XMLSerializer().serializeToString(clonedSvg)
+  const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+  const svgUrl  = URL.createObjectURL(svgBlob)
+
+  // ── 3. Render to canvas ───────────────────────────────────────────────
+  const DPR = Math.max(window.devicePixelRatio ?? 1, 2)  // min 2× for crisp output
+  const canvas  = document.createElement('canvas')
+  canvas.width  = contentW * DPR
+  canvas.height = contentH * DPR
+
+  const ctx = canvas.getContext('2d')!
+  ctx.scale(DPR, DPR)
+  // Transparent background — do not fill
+
+  await new Promise<void>((resolve, reject) => {
+    const img = new Image()
+    img.onload  = () => { ctx.drawImage(img, 0, 0); resolve() }
+    img.onerror = reject
+    img.src = svgUrl
+  })
+
+  URL.revokeObjectURL(svgUrl)
+
+  // ── 4. Download ───────────────────────────────────────────────────────
+  canvas.toBlob(blob => {
+    if (blob) triggerDownload(blob, `${filename}.png`)
+  }, 'image/png')
+}
+
+/** Collect all CSS rules and force Latte (light) theme variables for consistent PNG output. */
+function collectStyles(_scopeEl: Element): string {
+  const parts: string[] = []
+
+  // Force Latte palette — PNG always exports in light theme regardless of active theme
+  const latteVars = Object.entries(LATTE)
+    .map(([key, value]) => `  --ctp-${key}: ${value};`)
+    .join('\n')
+  parts.push(`:root {\n${latteVars}\n}`)
+
+  // Inline all stylesheet rules so the SVG is self-contained
+  for (const sheet of document.styleSheets) {
+    try {
+      for (const rule of sheet.cssRules) {
+        parts.push(rule.cssText)
+      }
+    } catch {
+      // Cross-origin stylesheets — skip
+    }
+  }
+
+  return parts.join('\n')
+}
+
+function triggerDownload(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'diagram.json'
+  a.download = filename
   a.click()
   URL.revokeObjectURL(url)
 }

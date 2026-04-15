@@ -130,3 +130,6 @@ export function loadSavedTheme() {
   const saved = localStorage.getItem('theme') as ThemeFlavour | null
   applyTheme(saved ?? 'mocha')
 }
+
+/** Latte palette exported for use in PNG export (always renders in light theme). */
+export const LATTE = palettes.latte

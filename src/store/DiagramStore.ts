@@ -230,6 +230,12 @@ export class DiagramStore {
     this.emit('viewport:update', this.diagram.viewport)
   }
 
+  // ── Diagram metadata ──────────────────────────────────────────────────────
+
+  updateDiagramName(name: string) {
+    this.diagram.name = name
+  }
+
   // ── Load ──────────────────────────────────────────────────────────────────
 
   load(diagram: Diagram) {
