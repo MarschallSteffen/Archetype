@@ -123,6 +123,9 @@ export class DiagramStore {
 
   /** Ensure arrays exist for diagrams loaded from old JSON, and run migrations. */
   private ensureNewFields() {
+    // Backfill elementType on classes/packages loaded from old JSON
+    for (const c of this.diagram.classes)  { if (!(c as any).elementType) (c as any).elementType = 'uml-class' }
+    for (const p of this.diagram.packages) { if (!(p as any).elementType) (p as any).elementType = 'uml-package' }
     if (!this.diagram.actors)    this.diagram.actors    = []
     if (!this.diagram.queues)    this.diagram.queues    = []
     if (!this.diagram.useCases)  this.diagram.useCases  = []

@@ -117,15 +117,18 @@ export class DragController {
     const push = (id: string, pos: { x: number; y: number }, size: { w: number; h: number }) => {
       if (!excludeIds.has(id)) rects.push({ x: pos.x, y: pos.y, w: size.w, h: size.h })
     }
-    for (const c of s.classes)   push(c.id, c.position, c.size)
-    for (const p of s.packages)  push(p.id, p.position, p.size)
-    for (const st of s.storages) push(st.id, st.position, st.size)
-    for (const a of s.actors)    push(a.id, a.position, a.size)
-    for (const q of s.queues)    push(q.id, q.position, q.size)
-    // seq-diagrams snap by their bounding box
-    for (const sd of (s.sequenceDiagrams ?? [])) {
-      if (!excludeIds.has(sd.id)) rects.push({ x: sd.position.x, y: sd.position.y, w: sd.size.w, h: sd.size.h })
-    }
+    for (const c of s.classes)        push(c.id, c.position, c.size)
+    for (const p of s.packages)       push(p.id, p.position, p.size)
+    for (const st of s.storages)      push(st.id, st.position, st.size)
+    for (const a of s.actors)         push(a.id, a.position, a.size)
+    for (const q of s.queues)         push(q.id, q.position, q.size)
+    for (const u of s.useCases)       push(u.id, u.position, u.size)
+    for (const u of s.ucSystems)      push(u.id, u.position, u.size)
+    for (const st of (s.states ?? []))      push(st.id, st.position, st.size)
+    for (const st of (s.startStates ?? [])) push(st.id, st.position, st.size)
+    for (const st of (s.endStates ?? []))   push(st.id, st.position, st.size)
+    for (const sd of (s.sequenceDiagrams ?? []))   push(sd.id, sd.position, sd.size)
+    for (const f of (s.combinedFragments ?? []))    push(f.id, f.position, f.size)
     return rects
   }
 }
