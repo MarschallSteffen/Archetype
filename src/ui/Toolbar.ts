@@ -24,12 +24,12 @@ const ICONS: Record<Tool, string> = {
   queue:         `<svg viewBox="0 0 24 24"><rect fill="none" stroke="currentColor" stroke-width="2" x="2" y="7" width="20" height="10" rx="5"/><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M10 12 L14 12 M14 12 L12 10 M14 12 L12 14"/></svg>`,
   'use-case':    `<svg viewBox="0 0 24 24"><ellipse fill="none" stroke="currentColor" stroke-width="2" cx="12" cy="12" rx="9" ry="6"/></svg>`,
   'uc-actor':    `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="5" r="3"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="7" y1="11" x2="17" y2="11"/><line x1="12" y1="16" x2="9" y2="21"/><line x1="12" y1="16" x2="15" y2="21"/></svg>`,
-  'uc-system':   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="20" rx="1"/><line x1="2" y1="7" x2="22" y2="7"/><ellipse cx="12" cy="14" rx="6" ry="4" stroke-width="1.5"/></svg>`,
+  'uc-system':   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="13" rx="1.5"/><path d="M3 8 L3 5 Q3 3 5 3 L9 3 Q11 3 11 5 L11 8" fill="none"/></svg>`,
   'state':       `<svg viewBox="0 0 24 24"><rect fill="none" stroke="currentColor" stroke-width="2" x="3" y="8" width="18" height="8" rx="4"/></svg>`,
   'start-state': `<svg viewBox="0 0 24 24"><circle fill="currentColor" cx="12" cy="12" r="6"/></svg>`,
   'end-state':   `<svg viewBox="0 0 24 24"><circle fill="none" stroke="currentColor" stroke-width="2" cx="12" cy="12" r="8"/><circle fill="currentColor" cx="12" cy="12" r="5"/></svg>`,
   'seq-diagram': `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="8" height="6" rx="1"/><rect x="13" y="3" width="8" height="6" rx="1"/><line x1="7" y1="9" x2="7" y2="21" stroke-dasharray="3 2"/><line x1="17" y1="9" x2="17" y2="21" stroke-dasharray="3 2"/><line x1="7" y1="14" x2="17" y2="14" stroke-dasharray="0"/><path d="M15 12 L17 14 L15 16" stroke-width="1.5"/></svg>`,
-  'seq-fragment':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" stroke-dasharray="4 2"/><path d="M3 3h6v4H3" fill="currentColor" stroke="none"/><line x1="3" y1="12" x2="21" y2="12" stroke-dasharray="3 2" stroke-width="1"/></svg>`,
+  'seq-fragment':`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="8" width="18" height="13" rx="1.5"/><path d="M3 8 L3 5 Q3 3 5 3 L9 3 Q11 3 11 5 L11 8" fill="none"/></svg>`,
 }
 
 const TOOL_LABELS: Record<Tool, string> = {

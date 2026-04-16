@@ -3,6 +3,9 @@ import type { Selectable } from './SelectionManager.ts'
 import type { ElementKind } from '../types.ts'
 import { applySnap, type SnapRect } from './SnapEngine.ts'
 
+/** Element kinds that act as containers — dragging them alone also drags contained elements. */
+const CONTAINER_KINDS: ReadonlySet<ElementKind> = new Set(['package', 'uc-system', 'seq-fragment'])
+
 interface DragTarget {
   kind: ElementKind
   id: string
@@ -39,9 +42,9 @@ export class DragController {
       ? (selection.filter(s => s.kind !== 'connection') as Array<{ kind: ElementKind; id: string }>)
       : [target]
 
-    const draggingPackageAlone = target.kind === 'package' &&
+    const draggingContainerAlone = CONTAINER_KINDS.has(target.kind) &&
       (!inSelection || (inSelection && selection.filter(s => s.kind !== 'connection').length === 1))
-    if (draggingPackageAlone) {
+    if (draggingContainerAlone) {
       const contained = this.getContainedElements(target.id)
       for (const c of contained) {
         if (!items.some(i => i.id === c.id && i.kind === c.kind)) {

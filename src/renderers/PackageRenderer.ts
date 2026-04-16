@@ -1,12 +1,19 @@
-import type { UmlPackage } from '../entities/Package.ts'
 import type { DiagramStore } from '../store/DiagramStore.ts'
 import { PORT_SIDES, portPosition } from './ports.ts'
 import { svgEl, renderPortsInto, updatePortPositions, estimateTextWidth } from './svgUtils.ts'
 
 const TAB_H   = 20
-const TAB_PAD = 8    // horizontal padding on each side of the name in the tab
+const TAB_PAD = 8
 const MIN_W   = 120
 const MIN_H   = 60
+
+/** Common "named box with tab" renderer used for packages, UC system boundaries, and combined fragments. */
+export interface PackageLikeEntity {
+  id: string
+  name: string
+  position: { x: number; y: number }
+  size: { w: number; h: number }
+}
 
 export class PackageRenderer {
   readonly el: SVGGElement
@@ -16,56 +23,63 @@ export class PackageRenderer {
   private portsGroup: SVGGElement
   private computedW = MIN_W
   private computedH = MIN_H
+  private entity: PackageLikeEntity
 
   constructor(
-    private pkg: UmlPackage,
-    _store: DiagramStore,
-    private onPortMousedown: (pkg: UmlPackage, port: string, e: MouseEvent) => void,
+    entity: PackageLikeEntity,
+    store: DiagramStore,
+    private onPortMousedown: (entity: PackageLikeEntity, port: string, e: MouseEvent) => void,
+    /** Store event type to listen for (e.g. 'package:update', 'uc-system:update') */
+    eventType: string,
+    /** SVG data-elementType attribute */
+    elementType: string = 'uml-package',
+    /** Optional extra CSS class on the background rect (e.g. for dashed borders) */
+    bgExtraClass?: string,
   ) {
+    this.entity = entity
     this.el = svgEl('g')
     this.el.classList.add('uml-package')
-    this.el.dataset.id = pkg.id
-    this.el.dataset.elementType = 'uml-package'
+    this.el.dataset.id = entity.id
+    this.el.dataset.elementType = elementType
 
     this.tab = svgEl('rect')
     this.tab.classList.add('pkg-tab')
     this.bg = svgEl('rect')
     this.bg.classList.add('pkg-bg')
+    if (bgExtraClass) this.bg.classList.add(bgExtraClass)
     this.nameText = svgEl('text')
     this.nameText.classList.add('pkg-name')
     this.portsGroup = svgEl('g')
 
     this.el.append(this.tab, this.bg, this.nameText, this.portsGroup)
 
-    renderPortsInto(this.portsGroup, PORT_SIDES, (side, e) => this.onPortMousedown(this.pkg, side, e))
-    this.update(pkg)
+    renderPortsInto(this.portsGroup, PORT_SIDES, (side, e) => this.onPortMousedown(this.entity, side, e))
+    this.update(entity)
 
-    // Re-run update after first paint so getComputedTextLength() returns the
-    // real rendered width (it returns 0 before the element is in the DOM).
-    requestAnimationFrame(() => this.update(this.pkg))
+    requestAnimationFrame(() => this.update(this.entity))
 
-    _store.on(ev => {
-      if (ev.type === 'package:update' && (ev.payload as UmlPackage).id === pkg.id) {
-        this.pkg = ev.payload as UmlPackage
-        this.update(this.pkg)
+    store.on(ev => {
+      if (ev.type === eventType && (ev.payload as { id: string }).id === entity.id) {
+        this.entity = ev.payload as PackageLikeEntity
+        this.update(this.entity)
       }
     })
   }
 
-  update(pkg: UmlPackage) {
-    const { position: { x, y }, size: { w, h } } = pkg
+  update(entity: PackageLikeEntity) {
+    this.entity = entity
+    const { position: { x, y }, size: { w, h } } = entity
     this.computedW = Math.max(w, MIN_W)
     this.computedH = Math.max(h, MIN_H)
 
     this.el.setAttribute('transform', `translate(${x},${y})`)
 
-    // Set text first so getComputedTextLength() returns the actual rendered width
-    this.nameText.textContent = pkg.name
+    this.nameText.textContent = entity.name
     this.nameText.setAttribute('x', String(TAB_PAD))
     this.nameText.setAttribute('y', String(-TAB_H / 2))
 
     const measured = this.nameText.getComputedTextLength()
-    const tabW = Math.ceil(measured > 0 ? measured : estimateTextWidth(pkg.name)) + TAB_PAD * 2
+    const tabW = Math.ceil(measured > 0 ? measured : estimateTextWidth(entity.name)) + TAB_PAD * 2
 
     this.tab.setAttribute('x', '0')
     this.tab.setAttribute('y', String(-TAB_H))
@@ -81,13 +95,7 @@ export class PackageRenderer {
   }
 
   getRenderedSize() { return { w: this.computedW, h: this.computedH } }
-
-  getContentMinSize() {
-    return { w: MIN_W, h: MIN_H }
-  }
-
-  setSelected(selected: boolean) {
-    this.el.classList.toggle('selected', selected)
-  }
+  getContentMinSize() { return { w: MIN_W, h: MIN_H } }
+  setSelected(selected: boolean) { this.el.classList.toggle('selected', selected) }
   destroy() { this.el.remove() }
 }

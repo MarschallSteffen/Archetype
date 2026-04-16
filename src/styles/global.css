@@ -323,8 +323,7 @@ body {
 .uml-storage:hover .port,
 .uml-actor:hover .port,
 .uml-queue:hover .port,
-.uml-usecase:hover .port,
-.uml-ucsystem:hover .port { opacity: 1; }
+.uml-usecase:hover .port { opacity: 1; }
 
 /* ── Connection arrows ─────────────────────────────────────────────────── */
 .connection { cursor: pointer; }
@@ -364,7 +363,7 @@ body {
 
 /* ── Connection / context popovers ────────────────────────────────────── */
 .popover {
-  position: absolute;
+  position: fixed;
   background: var(--ctp-mantle);
   border: 1px solid var(--ctp-surface1);
   border-radius: 8px;
@@ -520,8 +519,7 @@ body {
 }
 
 /* ── Use Case elements ─────────────────────────────────────────────────────── */
-.uml-usecase:hover .port,
-.uml-ucsystem:hover .port { opacity: 1; }
+.uml-usecase:hover .port { opacity: 1; }
 
 .uml-usecase { cursor: move; }
 .uml-usecase .usecase-bg {
@@ -541,22 +539,10 @@ body {
   stroke-width: 2;
 }
 
-.uml-ucsystem { cursor: move; }
-.uml-ucsystem .ucsystem-bg {
-  fill: none;
-  stroke: var(--ctp-overlay2);
-  stroke-width: 2;
-}
-.uml-ucsystem .ucsystem-name {
-  fill: var(--ctp-overlay2);
-  font-size: 12px;
-  dominant-baseline: auto;
-  text-anchor: middle;
-  pointer-events: none;
-}
-.uml-ucsystem.selected .ucsystem-bg {
-  stroke: var(--ctp-lavender);
-  stroke-width: 2.5;
+/* Combined Fragment condition text */
+.seq-fragment-cond {
+  fill: var(--ctp-subtext0);
+  font-size: 11px;
 }
 
 /* ── Request / channel connection symbol ───────────────────────────────── */
@@ -886,32 +872,9 @@ body {
   stroke-width: 1;
 }
 
-/* Combined Fragment */
-.seq-fragment { cursor: move; }
-.seq-fragment-bg {
-  fill: none;
-  stroke: var(--ctp-overlay1);
-  stroke-dasharray: 6 4;
-  stroke-width: 1.5;
-}
-.seq-fragment-tab {
-  fill: var(--ctp-surface0);
-  stroke: var(--ctp-overlay1);
-  stroke-width: 1.5;
-}
-.seq-fragment-op {
-  fill: var(--ctp-text);
-  font-size: 12px;
-  font-style: italic;
-  pointer-events: none;
-}
-.seq-fragment-cond {
-  fill: var(--ctp-subtext0);
-  font-size: 11px;
-  pointer-events: none;
-}
-.seq-fragment.selected .seq-fragment-bg {
-  stroke: var(--ctp-lavender);
+/* Combined Fragment — dashed border on the package background */
+.pkg-bg-dashed {
+  stroke-dasharray: 6 3;
 }
 
 /* Inter-lifeline arrows rendered in seqConnLayer */

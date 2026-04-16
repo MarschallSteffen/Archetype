@@ -43,7 +43,7 @@ export class InlineEditor {
       if (!this.active) return
       const val = input.value.trim()
       this.cleanup(textEl, fo)
-      if (val) onCommit(val)
+      onCommit(val)
     }
 
     const cancel = () => this.cleanup(textEl, fo)

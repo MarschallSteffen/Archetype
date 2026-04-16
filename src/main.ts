@@ -7,7 +7,6 @@ import { StorageRenderer } from './renderers/StorageRenderer.ts'
 import { ActorRenderer } from './renderers/ActorRenderer.ts'
 import { QueueRenderer } from './renderers/QueueRenderer.ts'
 import { UseCaseRenderer } from './renderers/UseCaseRenderer.ts'
-import { UCSystemRenderer } from './renderers/UCSystemRenderer.ts'
 import { StateRenderer } from './renderers/StateRenderer.ts'
 import { StartStateRenderer } from './renderers/StartStateRenderer.ts'
 import { EndStateRenderer } from './renderers/EndStateRenderer.ts'
@@ -58,7 +57,7 @@ import type { Connection } from './entities/Connection.ts'
 import { absolutePortPosition } from './renderers/ports.ts'
 import { getElementConfig } from './config/registry.ts'
 import type { ElementKind } from './types.ts'
-import { bestPortPair, pathMidpoint } from './renderers/routing.ts'
+import { bestPortPair } from './renderers/routing.ts'
 import type { PortSide } from './renderers/routing.ts'
 import type { ElbowMode } from './entities/Connection.ts'
 
@@ -143,14 +142,13 @@ const pkgLayer      = document.createElementNS('http://www.w3.org/2000/svg', 'g'
 const storageLayer  = document.createElementNS('http://www.w3.org/2000/svg', 'g')
 const actorLayer    = document.createElementNS('http://www.w3.org/2000/svg', 'g')
 const queueLayer    = document.createElementNS('http://www.w3.org/2000/svg', 'g')
-const ucSystemLayer = document.createElementNS('http://www.w3.org/2000/svg', 'g')
 const ucLayer       = document.createElementNS('http://www.w3.org/2000/svg', 'g')
 const stateLayer    = document.createElementNS('http://www.w3.org/2000/svg', 'g')
 const seqLayer      = document.createElementNS('http://www.w3.org/2000/svg', 'g')
 const seqConnLayer  = document.createElementNS('http://www.w3.org/2000/svg', 'g')
 const connLayer     = document.createElementNS('http://www.w3.org/2000/svg', 'g')
 const clsLayer      = document.createElementNS('http://www.w3.org/2000/svg', 'g')
-viewGroup.append(pkgLayer, storageLayer, actorLayer, queueLayer, ucSystemLayer, ucLayer, stateLayer, seqLayer, seqConnLayer, connLayer, clsLayer)
+viewGroup.append(pkgLayer, storageLayer, actorLayer, queueLayer, ucLayer, stateLayer, seqLayer, seqConnLayer, connLayer, clsLayer)
 
 // Rubber-band selection rect — lives inside viewGroup so coords are in diagram space
 const rubberBandRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
@@ -191,7 +189,7 @@ const storageRenderers  = new Map<string, StorageRenderer>()
 const actorRenderers    = new Map<string, ActorRenderer>()
 const queueRenderers    = new Map<string, QueueRenderer>()
 const ucRenderers       = new Map<string, UseCaseRenderer>()
-const ucSystemRenderers = new Map<string, UCSystemRenderer>()
+const ucSystemRenderers = new Map<string, PackageRenderer>()
 const stateRenderers      = new Map<string, StateRenderer>()
 const startStateRenderers = new Map<string, StartStateRenderer>()
 const endStateRenderers   = new Map<string, EndStateRenderer>()
@@ -262,16 +260,32 @@ function getSvgPoint(e: MouseEvent): DOMPoint {
 // ─── Controllers ──────────────────────────────────────────────────────────────
 
 /**
- * Returns all non-package element ids whose center lies strictly within the
- * given container package's current rendered rect. Used by DragController.
+ * Returns all element ids whose center lies strictly within the given
+ * container's current rendered rect. Works for packages, UC systems,
+ * and combined fragments — all container-type elements.
  */
-function getContainedElements(pkgId: string): Array<{ kind: ElementKind; id: string }> {
+function getContainedElements(containerId: string): Array<{ kind: ElementKind; id: string }> {
   const d = store.state
-  const pkg = d.packages.find(p => p.id === pkgId)
-  if (!pkg) return []
-  const pkgR = pkgRenderers.get(pkgId)
-  const { w, h } = pkgR?.getRenderedSize() ?? pkg.size
-  const { x, y } = pkg.position
+  // Find the container in any of the container collections
+  type Container = { id: string; position: { x: number; y: number }; size: { w: number; h: number } }
+  let container: Container | undefined
+  let renderedSize: { w: number; h: number } | undefined
+
+  container = d.packages.find(p => p.id === containerId)
+  if (container) renderedSize = pkgRenderers.get(containerId)?.getRenderedSize()
+
+  if (!container) {
+    container = d.ucSystems.find(u => u.id === containerId)
+    if (container) renderedSize = ucSystemRenderers.get(containerId)?.getRenderedSize()
+  }
+  if (!container) {
+    container = d.combinedFragments?.find(f => f.id === containerId)
+    if (container) renderedSize = seqFragmentRenderers.get(containerId)?.getRenderedSize()
+  }
+
+  if (!container) return []
+  const { w, h } = renderedSize ?? container.size
+  const { x, y } = container.position
   const result: Array<{ kind: ElementKind; id: string }> = []
   const inside = (el: { position: { x: number; y: number }; size: { w: number; h: number } }) => {
     const cx = el.position.x + el.size.w / 2
@@ -323,7 +337,7 @@ function addPackageRenderer(pkg: UmlPackage) {
   const r = new PackageRenderer(pkg, store, (el, port, e) => {
     connect.startConnection({ ...el, elementType: 'uml-package' }, port, e)
     e.preventDefault()
-  })
+  }, 'package:update', 'uml-package')
   pkgLayer.appendChild(r.el)
   pkgRenderers.set(pkg.id, r)
   wirePackageInteraction(r, pkg)
@@ -370,11 +384,11 @@ function addUseCaseRenderer(uc: UseCase) {
 }
 
 function addUCSystemRenderer(sys: UCSystem) {
-  const r = new UCSystemRenderer(sys, store, (el, port, e) => {
+  const r = new PackageRenderer(sys, store, (el, port, e) => {
     connect.startConnection({ ...el, elementType: 'uc-system' }, port, e)
     e.preventDefault()
-  })
-  ucSystemLayer.appendChild(r.el)
+  }, 'uc-system:update', 'uc-system')
+  pkgLayer.appendChild(r.el)
   ucSystemRenderers.set(sys.id, r)
   wireUCSystemInteraction(r, sys)
 }
@@ -433,9 +447,14 @@ function showLifelineAddButtons(sd: SequenceDiagram) {
   const r = seqDiagramRenderers.get(sd.id)
   const { w: sdW } = r?.getRenderedSize() ?? sd.size
   const midY = sd.position.y + SEQ_HEADER_H / 2
+  const BTN_SIZE = 22
+  const GAP = 6
 
-  const leftPos  = toScreen(sd.position.x - 28, midY - 11)
-  const rightPos = toScreen(sd.position.x + sdW + 4, midY - 11)
+  // Convert container edges to screen coords, then offset by screen-pixel gap
+  const leftEdge  = toScreen(sd.position.x, midY)
+  const rightEdge = toScreen(sd.position.x + sdW, midY)
+  const leftPos  = { x: leftEdge.x - BTN_SIZE - GAP, y: leftEdge.y - BTN_SIZE / 2 }
+  const rightPos = { x: rightEdge.x + GAP, y: rightEdge.y - BTN_SIZE / 2 }
 
   function makeBtn(side: 'left' | 'right', pos: { x: number; y: number }) {
     const btn = document.createElement('button')
@@ -507,7 +526,7 @@ function addSeqDiagramRenderer(sd: SequenceDiagram) {
         const latestLL = latestSd.lifelines.find(l => l.id === lifeline.id)
         if (!latestLL) return
         const msgs = [...latestLL.messages]
-        msgs[msgIdx] = { ...msgs[msgIdx], label: val }
+        msgs[msgIdx] = { ...msgs[msgIdx], label: val || 'message' }
         store.updateSequenceDiagram(sdId, {
           lifelines: latestSd.lifelines.map(l => l.id === lifeline.id ? { ...l, messages: msgs } : l)
         })
@@ -642,7 +661,7 @@ function wireSeqDiagramInteraction(r: SequenceDiagramRenderer, sd: SequenceDiagr
       const latestSd = store.state.sequenceDiagrams.find(s => s.id === sd.id)
       if (!latestSd) return
       store.updateSequenceDiagram(sd.id, {
-        lifelines: latestSd.lifelines.map(l => l.id === llId ? { ...l, name: val } : l)
+        lifelines: latestSd.lifelines.map(l => l.id === llId ? { ...l, name: val || 'Lifeline' } : l)
       })
     })
   })
@@ -754,7 +773,7 @@ function wireSeqDiagramInteraction(r: SequenceDiagramRenderer, sd: SequenceDiagr
 }
 
 function addSeqFragmentRenderer(frag: CombinedFragment) {
-  const r = new CombinedFragmentRenderer(frag, store, seqLayer)
+  const r = new CombinedFragmentRenderer(frag, store, pkgLayer)
   seqFragmentRenderers.set(frag.id, r)
   wireSeqFragmentInteraction(r, frag)
 }
@@ -772,19 +791,9 @@ function addConnectionRenderer(conn: Connection) {
     const tgtEl = findElement(d, c.target.elementId)
     if (!srcEl || !tgtEl) return
 
-    const srcSize = getRenderedSizeFor(c.source.elementId, srcEl)
-    const tgtSize = getRenderedSizeFor(c.target.elementId, tgtEl)
-    const s = absolutePortPosition(srcEl.el.position.x, srcEl.el.position.y, srcSize.w, srcSize.h, c.source.port)
-    const t = absolutePortPosition(tgtEl.el.position.x, tgtEl.el.position.y, tgtSize.w, tgtSize.h, c.target.port)
-    const srcRect = { x: srcEl.el.position.x, y: srcEl.el.position.y, w: srcSize.w, h: srcSize.h }
-    const tgtRect = { x: tgtEl.el.position.x, y: tgtEl.el.position.y, w: tgtSize.w, h: tgtSize.h }
-    const mid = pathMidpoint(s.x, s.y, c.source.port, t.x, t.y, c.target.port, srcRect, tgtRect)
-
-    const svgRect = svg.getBoundingClientRect()
-    const vp = d.viewport
     dismissConnPopover = showConnectionPopover(
-      svgRect.left + mid.x * vp.zoom + vp.x,
-      svgRect.top  + mid.y * vp.zoom + vp.y,
+      e.clientX,
+      e.clientY,
       (type, srcMult, tgtMult) => {
         store.updateConnection(c.id, {
           type,
@@ -996,7 +1005,7 @@ function wireElementInteraction(
     // Find the name text node to anchor the inline editor
     const nameEl = el.querySelector<SVGTextElement>(`.${nameSelector}`)
     if (!nameEl) return
-    inlineEditor.edit(nameEl, getName(), updateName)
+    inlineEditor.edit(nameEl, getName(), val => { if (val) updateName(val) })
   })
 }
 
@@ -1024,12 +1033,14 @@ function wireClassInteraction(r: ClassRenderer, cls: UmlClass) {
     if (memberKind === 'attribute') {
       const attrs = [...currentCls.attributes]
       inlineEditor.edit(target, target.textContent ?? '', val => {
+        if (!val) return
         attrs[idx] = { ...attrs[idx], raw: val }
         store.updateClass(cls.id, { attributes: attrs })
       })
     } else {
       const methods = [...currentCls.methods]
       inlineEditor.edit(target, target.textContent ?? '', val => {
+        if (!val) return
         methods[idx] = { ...methods[idx], raw: val }
         store.updateClass(cls.id, { methods })
       })
@@ -1087,11 +1098,11 @@ function wireUseCaseInteraction(r: UseCaseRenderer, uc: UseCase) {
   )
 }
 
-function wireUCSystemInteraction(r: UCSystemRenderer, sys: UCSystem) {
+function wireUCSystemInteraction(r: PackageRenderer, sys: UCSystem) {
   wireElementInteraction(
     r.el, 'uc-system', sys.id,
     () => { const s = r.getRenderedSize(); const c = store.state.ucSystems.find(u => u.id === sys.id) ?? sys; return { x: c.position.x, y: c.position.y, w: s.w, h: s.h } },
-    'ucsystem-name',
+    'pkg-name',
     () => (store.state.ucSystems.find(u => u.id === sys.id) ?? sys).name,
     val => store.updateUCSystem(sys.id, { name: val }),
   )
@@ -1767,6 +1778,12 @@ function refreshSeqDiagram(sd: SequenceDiagram, sdR: SequenceDiagramRenderer) {
       maxW = Math.max(maxW, ll.position.x + w)
       maxH = Math.max(maxH, h)
     }
+    // Also extend to cover the lowest arrow (incoming arrows may go past a lifeline's own messages)
+    if (events.length > 0) {
+      const maxAbsY = Math.max(...events.map(ev => ev.absY))
+      const maxEventLocalH = maxAbsY - sd.position.y + SLOT_H
+      maxH = Math.max(maxH, maxEventLocalH)
+    }
     // Store updated size on the container so drag/resize hitboxes are correct
     if (maxW !== sd.size.w || maxH !== sd.size.h) {
       // Silent update — don't re-emit seqdiagram:update (would recurse)
@@ -1890,7 +1907,7 @@ function refreshSeqDiagram(sd: SequenceDiagram, sdR: SequenceDiagramRenderer) {
         const ll2 = sd2?.lifelines.find(l => l.id === srcLL.id)
         if (!sd2 || !ll2) return
         const msgs = [...ll2.messages]
-        msgs[ev.msgIdx] = { ...msgs[ev.msgIdx], label: val }
+        msgs[ev.msgIdx] = { ...msgs[ev.msgIdx], label: val || 'message' }
         store.updateSequenceDiagram(sd.id, {
           lifelines: sd2.lifelines.map(l => l.id === srcLL.id ? { ...l, messages: msgs } : l)
         })
@@ -2283,6 +2300,11 @@ function applyViewport() {
   viewGroup.setAttribute('transform', `translate(${x},${y}) scale(${zoom})`)
   updateZoomLabel()
   refreshLifelineAddButtons()
+  // Dismiss open popovers — they're screen-pinned and would drift from their element
+  dismissConnPopover?.()
+  dismissConnPopover = null
+  document.getElementById('conn-popover')?.remove()
+  document.getElementById('msg-popover')?.remove()
 }
 
 // ─── Build initial diagram ────────────────────────────────────────────────────
@@ -2294,7 +2316,6 @@ function rebuildAll() {
   actorLayer.innerHTML = ''
   queueLayer.innerHTML = ''
   ucLayer.innerHTML = ''
-  ucSystemLayer.innerHTML = ''
   stateLayer.innerHTML = ''
   seqLayer.innerHTML = ''
   seqConnLayer.innerHTML = ''
