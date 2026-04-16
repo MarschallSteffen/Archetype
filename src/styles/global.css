@@ -21,13 +21,13 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
-  padding: 0 8px;
+  padding: 0 8px 0 0;
   z-index: 50;
 }
 
 .titlebar-menu {
   position: relative;
-  margin-left: 56px;
+  margin-left: 0;
 }
 .titlebar-menu--edit {
   margin-left: 4px;
@@ -185,11 +185,210 @@ body {
   flex-shrink: 0;
 }
 
+/* ── Home button (titlebar left slot) ──────────────────────────────────── */
+.titlebar-home-btn {
+  width: 56px;
+  height: 36px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--ctp-subtext0);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.1s, color 0.1s;
+  margin: 0;
+  padding: 0;
+}
+.titlebar-home-btn:hover { background: var(--ctp-surface0); color: var(--ctp-text); }
+.titlebar-home-btn.active { color: var(--ctp-lavender); }
+
+/* When dashboard is open, hide everything in the titlebar except the home button */
+#titlebar.dashboard-open > :not(.titlebar-home-btn) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* ── Dashboard ─────────────────────────────────────────────────────────── */
+.dashboard {
+  position: absolute;
+  inset: 0;
+  background: var(--ctp-base);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80px 24px 40px;
+  overflow-y: auto;
+  gap: 40px;
+}
+
+.dashboard-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.dashboard-title {
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--ctp-text);
+  letter-spacing: -0.5px;
+}
+
+.dashboard-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.dashboard-action-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 148px;
+  padding: 20px 12px 16px;
+  border: 1px solid var(--ctp-surface0);
+  border-radius: 10px;
+  background: var(--ctp-mantle);
+  color: var(--ctp-text);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+  text-align: center;
+}
+.dashboard-action-card:hover {
+  border-color: var(--ctp-lavender);
+  background: var(--ctp-surface0);
+  transform: translateY(-1px);
+}
+
+.dashboard-action-icon {
+  color: var(--ctp-lavender);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dashboard-action-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.dashboard-action-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ctp-text);
+}
+
+.dashboard-action-sub {
+  font-size: 11px;
+  color: var(--ctp-subtext0);
+}
+
+.dashboard-section {
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dashboard-section-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ctp-subtext0);
+  padding: 0 2px;
+}
+
+.dashboard-recent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dashboard-empty {
+  font-size: 13px;
+  color: var(--ctp-subtext0);
+  padding: 8px 2px;
+}
+
+.dashboard-recent-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ctp-text);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  transition: background 0.1s;
+  position: relative;
+}
+.dashboard-recent-item:hover { background: var(--ctp-surface0); }
+.dashboard-recent-item > svg { flex-shrink: 0; color: var(--ctp-subtext0); }
+
+.dashboard-recent-name {
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-recent-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.dashboard-recent-filename {
+  font-size: 11px;
+  color: var(--ctp-subtext0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-recent-time {
+  font-size: 11px;
+  color: var(--ctp-subtext0);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.dashboard-recent-remove {
+  border: none;
+  background: transparent;
+  color: var(--ctp-subtext0);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+.dashboard-recent-item:hover .dashboard-recent-remove { opacity: 1; }
+.dashboard-recent-remove:hover { color: var(--ctp-red); }
+
 /* ── App shell ─────────────────────────────────────────────────────────── */
 #app {
   display: flex;
   flex: 1;
   min-height: 0;
+  position: relative;
 }
 
 #toolbar {

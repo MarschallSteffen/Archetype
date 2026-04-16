@@ -1,6 +1,6 @@
 import { DiagramStore } from './store/DiagramStore.ts'
 import { loadSavedTheme } from './themes/catppuccin.ts'
-import { loadDiagram, saveDiagram, openAndSaveToFile, closeActiveFile, getActiveFileName, loadDiagramFromFile, exportDiagramToPng } from './serialization/persistence.ts'
+import { loadDiagram, saveDiagram, openAndSaveToFile, closeActiveFile, setActiveFileHandle, getActiveFileName, loadDiagramFromFile, exportDiagramToPng, serializeDiagramV2, deserializeV2 } from './serialization/persistence.ts'
 import { ClassRenderer } from './renderers/ClassRenderer.ts'
 import { PackageRenderer } from './renderers/PackageRenderer.ts'
 import { StorageRenderer } from './renderers/StorageRenderer.ts'
@@ -24,6 +24,7 @@ import { Toolbar, type Tool as ToolKind } from './ui/Toolbar.ts'
 import { FileMenu } from './ui/FileMenu.ts'
 import { EditMenu } from './ui/EditMenu.ts'
 import { AiPromptButton } from './ui/AiPromptButton.ts'
+import { Dashboard, addRecentFile, getRecentFiles, injectPersistence } from './ui/Dashboard.ts'
 import { showConnectionPopover } from './ui/ConnectionPopover.ts'
 import { showMsgPopover } from './ui/MessagePopover.ts'
 import { showElementPropertiesPanel, hideElementPropertiesPanel } from './ui/ElementPropertiesPanel.ts'
@@ -66,6 +67,7 @@ import type { ElbowMode } from './entities/Connection.ts'
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
 loadSavedTheme()
+injectPersistence({ deserializeV2 })
 
 const svg = document.getElementById('canvas') as unknown as SVGSVGElement
 injectMarkerDefs(svg)
@@ -86,23 +88,22 @@ svg.appendChild(viewGroup)
 
 const fileMenuCallbacks = {
   onNew: () => {
-    if (ELEMENTS.some(desc => ((store.state[desc.collection] as any[])?.length ?? 0) > 0) ||
-        store.state.connections.length) {
-      if (!confirm('Create a new diagram? Unsaved changes will be lost.')) return
-    }
-    closeActiveFile()
-    const fresh = createDiagram('Untitled')
-    store.load(fresh)
-    saveDiagram(fresh)
-    fileMenu.setTitle(fresh.name)
-    fileMenu.setFileIndicator(null)
+    showDashboard()
   },
   onOpen: () => {
-    loadDiagramFromFile(d => {
+    loadDiagramFromFile((d, handle, rawJson) => {
       store.load(d)
       saveDiagram(d)
       fileMenu.setTitle(d.name ?? 'Untitled')
       fileMenu.setFileIndicator(getActiveFileName())
+      addRecentFile({
+        id: d.id,
+        name: d.name || 'Untitled',
+        filename: handle?.name ?? null,
+        timestamp: Date.now(),
+        data: rawJson,
+      })
+      hideDashboard()
     })
   },
   onSave: () => {
@@ -178,6 +179,90 @@ const aiBtnAnchor = document.createElement('div')
 aiBtnAnchor.classList.add('titlebar-right')
 titlebar.appendChild(aiBtnAnchor)
 new AiPromptButton(aiBtnAnchor)
+
+// ─── Home button + Dashboard ──────────────────────────────────────────────────
+
+const homeBtn = document.createElement('button')
+homeBtn.className = 'titlebar-home-btn'
+homeBtn.title = 'Home'
+homeBtn.innerHTML = `<svg width="16" height="16" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect x="2" y="2" width="14" height="14" rx="3" fill="currentColor" opacity="0.9"/>
+  <rect x="20" y="2" width="14" height="14" rx="3" fill="currentColor" opacity="0.65"/>
+  <rect x="2" y="20" width="14" height="14" rx="3" fill="currentColor" opacity="0.65"/>
+  <rect x="20" y="20" width="14" height="14" rx="3" fill="currentColor" opacity="0.45"/>
+</svg>`
+titlebar.insertBefore(homeBtn, titlebar.firstChild)
+
+const appEl = document.getElementById('app')!
+
+const dashboard = new Dashboard({
+  onNew: () => {
+    closeActiveFile()
+    const fresh = createDiagram('Untitled')
+    store.load(fresh)
+    saveDiagram(fresh)
+    fileMenu.setTitle(fresh.name)
+    fileMenu.setFileIndicator(null)
+    hideDashboard()
+  },
+  onOpen: () => {
+    loadDiagramFromFile((d, handle, rawJson) => {
+      store.load(d)
+      saveDiagram(d)
+      fileMenu.setTitle(d.name ?? 'Untitled')
+      fileMenu.setFileIndicator(getActiveFileName())
+      addRecentFile({
+        id: d.id,
+        name: d.name || 'Untitled',
+        filename: handle?.name ?? null,
+        timestamp: Date.now(),
+        data: rawJson,
+      })
+      hideDashboard()
+    })
+  },
+  onResume: (file, handle) => {
+    try {
+      const parsed = JSON.parse(file.data)
+      const d = deserializeV2(parsed)
+      if (handle) setActiveFileHandle(handle)
+      store.load(d)
+      saveDiagram(d)
+      fileMenu.setTitle(d.name ?? 'Untitled')
+      fileMenu.setFileIndicator(handle?.name ?? null)
+      hideDashboard()
+    } catch { /* corrupt entry */ }
+  },
+})
+appEl.appendChild(dashboard.el)
+
+function showDashboard() {
+  dashboard.refresh()
+  dashboard.el.style.display = 'flex'
+  homeBtn.classList.add('active')
+  titlebar.classList.add('dashboard-open')
+}
+
+function hideDashboard() {
+  dashboard.el.style.display = 'none'
+  homeBtn.classList.remove('active')
+  titlebar.classList.remove('dashboard-open')
+}
+
+homeBtn.addEventListener('click', () => {
+  if (dashboard.el.style.display === 'none') {
+    showDashboard()
+  } else {
+    hideDashboard()
+  }
+})
+
+// Show dashboard on start if there are recent files, otherwise go straight to editor
+if (getRecentFiles().length > 0) {
+  showDashboard()
+} else {
+  hideDashboard()
+}
 
 // Initialise title from loaded diagram
 fileMenu.setTitle(store.state.name ?? 'Untitled')
@@ -1433,6 +1518,18 @@ store.on(ev => {
 
   saveDiagram(store.state)
   fileMenu.notifySaved()
+  // Keep recent files entry in sync with latest diagram state
+  const d = store.state
+  if (d.id) {
+    const snapshot = JSON.stringify(serializeDiagramV2(d), null, 2)
+    addRecentFile({
+      id: d.id,
+      name: d.name || 'Untitled',
+      filename: getActiveFileName(),
+      timestamp: Date.now(),
+      data: snapshot,
+    })
+  }
 })
 
 // ─── Connection line refresh ──────────────────────────────────────────────────

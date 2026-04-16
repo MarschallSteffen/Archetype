@@ -85,6 +85,11 @@ export function closeActiveFile() {
   activeFileHandle = null
 }
 
+/** Set a file handle as the active autosave target (e.g. resumed from dashboard). */
+export function setActiveFileHandle(handle: FileSystemFileHandle | null) {
+  activeFileHandle = handle
+}
+
 /** Trigger a browser download of the diagram as a .json file (no handle). */
 export function saveDiagramToFile(diagram: Diagram, filename = 'diagram.json') {
   const json = JSON.stringify(serializeDiagramV2(diagram), null, 2)
@@ -192,7 +197,9 @@ function triggerDownload(blob: Blob, filename: string) {
  * Open a file picker, load the diagram, and set the handle as the active
  * autosave target so subsequent saves write back to the same file.
  */
-export async function loadDiagramFromFile(onLoad: (diagram: Diagram) => void): Promise<void> {
+export async function loadDiagramFromFile(
+  onLoad: (diagram: Diagram, handle: FileSystemFileHandle | null, rawJson: string) => void
+): Promise<void> {
   if ('showOpenFilePicker' in window) {
     try {
       const [handle] = await (window as typeof window & {
@@ -205,7 +212,7 @@ export async function loadDiagramFromFile(onLoad: (diagram: Diagram) => void): P
       const text = await file.text()
       const raw = JSON.parse(text)
       activeFileHandle = handle
-      onLoad(deserializeV2(raw))
+      onLoad(deserializeV2(raw), handle, text)
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') return
       if (err instanceof SyntaxError) { alert('Could not read diagram file — invalid JSON.'); return }
@@ -224,8 +231,9 @@ export async function loadDiagramFromFile(onLoad: (diagram: Diagram) => void): P
     const reader = new FileReader()
     reader.onload = () => {
       try {
-        const raw = JSON.parse(reader.result as string)
-        onLoad(deserializeV2(raw))
+        const text = reader.result as string
+        const raw = JSON.parse(text)
+        onLoad(deserializeV2(raw), null, text)
       } catch {
         alert('Could not read diagram file — invalid JSON.')
       }
