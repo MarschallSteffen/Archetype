@@ -665,6 +665,7 @@ body {
   transition: background 0.1s, color 0.1s, border-color 0.1s;
   padding: 0;
 }
+.conn-type-btn svg { display: block; }
 .conn-type-btn:hover { background: var(--ctp-surface1); color: var(--ctp-text); }
 .conn-type-btn.active {
   background: var(--ctp-surface2);

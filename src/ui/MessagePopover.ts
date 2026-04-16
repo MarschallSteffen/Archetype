@@ -1,5 +1,7 @@
 import type { SequenceMessage } from '../entities/SequenceLifeline.ts'
 
+const S = (d: string) => `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`
+
 export function showMsgPopover(
   screenX: number,
   screenY: number,
@@ -14,11 +16,11 @@ export function showMsgPopover(
   const layer = document.getElementById('popover-layer')!
 
   const KINDS: Array<{ kind: SequenceMessage['kind']; label: string; icon: string }> = [
-    { kind: 'sync',   label: 'Synchronous',   icon: '→'  },
-    { kind: 'async',  label: 'Asynchronous',  icon: '⇢'  },
-    { kind: 'create', label: 'Create',        icon: '⤳'  },
-    { kind: 'return', label: 'Return',        icon: '↵'  },
-    { kind: 'self',   label: 'Self call',     icon: '↩'  },
+    { kind: 'sync',   label: 'Synchronous',  icon: S('<line x1="1" y1="8" x2="13" y2="8"/><polygon points="10,5 13,8 10,11" fill="currentColor"/>') },
+    { kind: 'async',  label: 'Asynchronous', icon: S('<line x1="1" y1="8" x2="13" y2="8"/><path d="M10 5l3 3-3 3"/>') },
+    { kind: 'create', label: 'Create',       icon: S('<line x1="1" y1="8" x2="13" y2="8" stroke-dasharray="2 2"/><path d="M10 5l3 3-3 3"/>') },
+    { kind: 'return', label: 'Return',       icon: S('<line x1="3" y1="8" x2="15" y2="8" stroke-dasharray="2 2"/><path d="M6 5l-3 3 3 3"/>') },
+    { kind: 'self',   label: 'Self call',    icon: S('<polyline points="4,5 10,5 10,11 4,11"/><path d="M7 8.5l-3 2.5"/><path d="M7 13.5l-3-2.5"/>') },
   ]
 
   const kindButtons = KINDS.map(k => `
