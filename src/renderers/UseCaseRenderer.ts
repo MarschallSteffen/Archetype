@@ -13,6 +13,7 @@ export class UseCaseRenderer {
   private portsGroup: SVGGElement
   private computedW = MIN_W
   private computedH = MIN_H
+  private readonly _unsub: () => void
 
   constructor(
     private useCase: UseCase,
@@ -39,7 +40,7 @@ export class UseCaseRenderer {
     renderPortsInto(this.portsGroup, PORT_SIDES, (side, e) => this.onPortMousedown(this.useCase, side, e))
     this.update(useCase)
 
-    store.on(ev => {
+    this._unsub = store.on(ev => {
       if (ev.type === 'use-case:update' && (ev.payload as UseCase).id === useCase.id) {
         this.useCase = ev.payload as UseCase
         this.update(this.useCase)
@@ -79,5 +80,5 @@ export class UseCaseRenderer {
   setSelected(selected: boolean) {
     this.el.classList.toggle('selected', selected)
   }
-  destroy() { this.el.remove() }
+  destroy() { this._unsub(); this.el.remove() }
 }

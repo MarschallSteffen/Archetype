@@ -309,7 +309,8 @@ body {
   font-size: 11px;
   dominant-baseline: middle;
 }
-.uml-package.selected .pkg-bg { stroke: var(--ctp-lavender); }
+.uml-package.selected .pkg-bg { stroke: var(--ctp-lavender); stroke-width: 2; }
+.uml-package:hover { opacity: 0.9; }
 
 /* ── Connection ports ──────────────────────────────────────────────────── */
 .port {
@@ -377,6 +378,7 @@ body {
   gap: 6px;
   min-width: 180px;
   transform: translate(-50%, -110%);
+  transition: opacity 0.12s;
 }
 .popover select, .popover input {
   background: var(--ctp-surface0);
@@ -427,6 +429,18 @@ body {
   stroke: var(--ctp-lavender);
   stroke-width: 2;
 }
+
+/* ── Hover state — subtle opacity for all draggable element groups ─────── */
+.uml-class:hover,
+.uml-storage:hover,
+.uml-actor:hover,
+.uml-queue:hover,
+.uml-usecase:hover,
+.sd-state:hover,
+.sd-start-state:hover,
+.sd-end-state:hover,
+.seq-lifeline:hover,
+.seq-diagram:hover { opacity: 0.9; }
 
 /* ── Ghost connection line (while dragging) ────────────────────────────── */
 .ghost-line {
@@ -749,6 +763,7 @@ body {
 .elem-props-panel {
   transform: translate(0, 0);
   min-width: 160px;
+  transition: opacity 0.12s;
 }
 .elem-props-panel .props-label {
   display: flex;
@@ -962,8 +977,8 @@ body {
 /* ── Sequence Diagram Container ──────────────────────────────────────── */
 .seq-diagram-bg { fill: transparent; pointer-events: all; }
 .seq-diagram.selected .seq-diagram-bg {
-  stroke: var(--ctp-blue);
-  stroke-width: 1;
+  stroke: var(--ctp-lavender);
+  stroke-width: 2;
   stroke-dasharray: 4 3;
 }
 

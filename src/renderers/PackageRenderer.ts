@@ -24,6 +24,7 @@ export class PackageRenderer {
   private computedW = MIN_W
   private computedH = MIN_H
   private entity: PackageLikeEntity
+  private readonly _unsub: () => void
 
   constructor(
     entity: PackageLikeEntity,
@@ -58,7 +59,7 @@ export class PackageRenderer {
 
     requestAnimationFrame(() => this.update(this.entity))
 
-    store.on(ev => {
+    this._unsub = store.on(ev => {
       if (ev.type === eventType && (ev.payload as { id: string }).id === entity.id) {
         this.entity = ev.payload as PackageLikeEntity
         this.update(this.entity)
@@ -97,5 +98,5 @@ export class PackageRenderer {
   getRenderedSize() { return { w: this.computedW, h: this.computedH } }
   getContentMinSize() { return { w: MIN_W, h: MIN_H } }
   setSelected(selected: boolean) { this.el.classList.toggle('selected', selected) }
-  destroy() { this.el.remove() }
+  destroy() { this._unsub(); this.el.remove() }
 }

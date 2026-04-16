@@ -11,6 +11,7 @@ export class StartStateRenderer {
   private portsGroup: SVGGElement
   private computedW = SIZE
   private computedH = SIZE
+  private readonly _unsub: () => void
 
   constructor(
     private startState: StartState,
@@ -32,7 +33,7 @@ export class StartStateRenderer {
     renderPortsInto(this.portsGroup, PORT_SIDES, (side, e) => this.onPortMousedown(this.startState, side, e))
     this.update(startState)
 
-    store.on(ev => {
+    this._unsub = store.on(ev => {
       if (ev.type === 'start-state:update' && (ev.payload as StartState).id === startState.id) {
         this.startState = ev.payload as StartState
         this.update(this.startState)
@@ -60,5 +61,5 @@ export class StartStateRenderer {
   setSelected(selected: boolean) {
     this.el.classList.toggle('selected', selected)
   }
-  destroy() { this.el.remove() }
+  destroy() { this._unsub(); this.el.remove() }
 }

@@ -11,6 +11,7 @@ export class ActorRenderer {
   private portsGroup: SVGGElement
   private computedW = 80
   private computedH = 60
+  private readonly _unsub: () => void
 
   constructor(
     private actor: Actor,
@@ -37,7 +38,7 @@ export class ActorRenderer {
     renderPortsInto(this.portsGroup, PORT_SIDES, (side, e) => this.onPortMousedown(this.actor, side, e))
     this.update(actor)
 
-    store.on(ev => {
+    this._unsub = store.on(ev => {
       if (ev.type === 'actor:update' && (ev.payload as Actor).id === actor.id) {
         this.actor = ev.payload as Actor
         this.update(this.actor)
@@ -150,5 +151,5 @@ export class ActorRenderer {
   setSelected(selected: boolean) {
     this.el.classList.toggle('selected', selected)
   }
-  destroy() { this.el.remove() }
+  destroy() { this._unsub(); this.el.remove() }
 }

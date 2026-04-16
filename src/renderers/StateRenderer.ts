@@ -14,6 +14,7 @@ export class StateRenderer {
   private portsGroup: SVGGElement
   private computedW = MIN_W
   private computedH = MIN_H
+  private readonly _unsub: () => void
 
   constructor(
     private state: State,
@@ -40,7 +41,7 @@ export class StateRenderer {
     renderPortsInto(this.portsGroup, PORT_SIDES, (side, e) => this.onPortMousedown(this.state, side, e))
     this.update(state)
 
-    store.on(ev => {
+    this._unsub = store.on(ev => {
       if (ev.type === 'state:update' && (ev.payload as State).id === state.id) {
         this.state = ev.payload as State
         this.update(this.state)
@@ -79,5 +80,5 @@ export class StateRenderer {
   setSelected(selected: boolean) {
     this.el.classList.toggle('selected', selected)
   }
-  destroy() { this.el.remove() }
+  destroy() { this._unsub(); this.el.remove() }
 }

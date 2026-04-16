@@ -28,6 +28,7 @@ export class ClassRenderer {
   private addAttrBtn: SVGTextElement
   private addMethodBtn: SVGTextElement
   private portsGroup: SVGGElement
+  private readonly _unsub: () => void
 
   private computedW = MIN_W
   private computedH = HEADER_H + SECTION_LABEL_H + 8
@@ -83,7 +84,7 @@ export class ClassRenderer {
     renderPortsInto(this.portsGroup, PORT_SIDES, (side, e) => this.onPortMousedown(this.cls, side, e))
     this.update(cls)
 
-    _store.on(ev => {
+    this._unsub = _store.on(ev => {
       if (ev.type === 'class:update' && (ev.payload as UmlClass).id === cls.id) {
         this.cls = ev.payload as UmlClass
         this.update(this.cls)
@@ -187,5 +188,5 @@ export class ClassRenderer {
   setSelected(selected: boolean) {
     this.el.classList.toggle('selected', selected)
   }
-  destroy() { this.el.remove() }
+  destroy() { this._unsub(); this.el.remove() }
 }

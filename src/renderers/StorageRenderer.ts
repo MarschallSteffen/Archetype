@@ -13,6 +13,7 @@ export class StorageRenderer {
   private portsGroup: SVGGElement
   private computedW = 80
   private computedH = MIN_H
+  private readonly _unsub: () => void
 
   constructor(
     private storage: Storage,
@@ -38,7 +39,7 @@ export class StorageRenderer {
     renderPortsInto(this.portsGroup, PORT_SIDES, (side, e) => this.onPortMousedown(this.storage, side, e))
     this.update(storage)
 
-    store.on(ev => {
+    this._unsub = store.on(ev => {
       if (ev.type === 'storage:update' && (ev.payload as Storage).id === storage.id) {
         this.storage = ev.payload as Storage
         this.update(this.storage)
@@ -80,5 +81,5 @@ export class StorageRenderer {
   setSelected(selected: boolean) {
     this.el.classList.toggle('selected', selected)
   }
-  destroy() { this.el.remove() }
+  destroy() { this._unsub(); this.el.remove() }
 }

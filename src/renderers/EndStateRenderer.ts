@@ -12,6 +12,7 @@ export class EndStateRenderer {
   private portsGroup: SVGGElement
   private computedW = SIZE
   private computedH = SIZE
+  private readonly _unsub: () => void
 
   constructor(
     private endState: EndState,
@@ -36,7 +37,7 @@ export class EndStateRenderer {
     renderPortsInto(this.portsGroup, PORT_SIDES, (side, e) => this.onPortMousedown(this.endState, side, e))
     this.update(endState)
 
-    store.on(ev => {
+    this._unsub = store.on(ev => {
       if (ev.type === 'end-state:update' && (ev.payload as EndState).id === endState.id) {
         this.endState = ev.payload as EndState
         this.update(this.endState)
@@ -72,5 +73,5 @@ export class EndStateRenderer {
   setSelected(selected: boolean) {
     this.el.classList.toggle('selected', selected)
   }
-  destroy() { this.el.remove() }
+  destroy() { this._unsub(); this.el.remove() }
 }

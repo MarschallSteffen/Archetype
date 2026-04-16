@@ -16,6 +16,7 @@ export class QueueRenderer {
   private portsGroup: SVGGElement
   private computedW = 100
   private computedH = MIN_H
+  private readonly _unsub: () => void
 
   constructor(
     private queue: Queue,
@@ -46,7 +47,7 @@ export class QueueRenderer {
     renderPortsInto(this.portsGroup, QUEUE_PORT_SIDES, (side, e) => this.onPortMousedown(this.queue, side, e))
     this.update(queue)
 
-    store.on(ev => {
+    this._unsub = store.on(ev => {
       if (ev.type === 'queue:update' && (ev.payload as Queue).id === queue.id) {
         this.queue = ev.payload as Queue
         this.update(this.queue)
@@ -106,5 +107,5 @@ export class QueueRenderer {
   setSelected(selected: boolean) {
     this.el.classList.toggle('selected', selected)
   }
-  destroy() { this.el.remove() }
+  destroy() { this._unsub(); this.el.remove() }
 }
