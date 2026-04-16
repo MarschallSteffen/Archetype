@@ -371,13 +371,20 @@ function initElementDescriptors() {
 initElementDescriptors()
 
 /** Get all elements as {kind, id, x, y, w, h} for rubber-band / hit-testing */
+const PILL_KINDS = new Set<ElementKind>(['state', 'storage', 'queue', 'use-case'])
+
 function getAllElementRects() {
   const d = store.state
   return ELEMENTS.flatMap(desc => {
     const items = (d[desc.collection] as Array<{ id: string; position: { x: number; y: number }; size: { w: number; h: number } }>) ?? []
     return items.map(el => {
       const rs = desc.renderers.get(el.id)?.getRenderedSize() ?? el.size
-      return { kind: desc.kind as ElementKind, id: el.id, x: el.position.x, y: el.position.y, w: rs.w, h: rs.h }
+      const isPill = PILL_KINDS.has(desc.kind as ElementKind)
+      return {
+        kind: desc.kind as ElementKind, id: el.id,
+        x: el.position.x, y: el.position.y, w: rs.w, h: rs.h,
+        ...(isPill ? { ewZone: rs.h / 2 } : {}),
+      }
     })
   })
 }
@@ -1100,7 +1107,7 @@ function wireElementInteraction(
     const multiSelected = selection.items.length > 1 && selection.isSelected(id)
     if (!multiSelected) {
       const { x, y, w, h } = getElData()
-      const elData = { kind, id, x, y, w, h }
+      const elData = { kind, id, x, y, w, h, ...(PILL_KINDS.has(kind) ? { ewZone: h / 2 } : {}) }
       const resizeHit = resize.hitTest(e, [elData])
       if (resizeHit) {
         if (noVerticalResize && (resizeHit.edge === 'n' || resizeHit.edge === 's')) {

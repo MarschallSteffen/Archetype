@@ -23,24 +23,24 @@ export class ResizeController {
 
   hitTest(
     e: MouseEvent,
-    elements: Array<{ kind: ElementKind; id: string; x: number; y: number; w: number; h: number }>,
+    elements: Array<{ kind: ElementKind; id: string; x: number; y: number; w: number; h: number; ewZone?: number }>,
   ): { kind: ElementKind; id: string; edge: Edge } | null {
     const pt = this.getSvgPoint(e)
     // Scale handle size to diagram space so it stays 8px on screen at any zoom
     const h = HANDLE_SCREEN_PX / this.getZoom()
     for (const el of elements) {
-      const edge = this._edgeHit(pt.x, pt.y, el.x, el.y, el.w, el.h, h)
+      const edge = this._edgeHit(pt.x, pt.y, el.x, el.y, el.w, el.h, h, el.ewZone)
       if (edge) return { kind: el.kind, id: el.id, edge }
     }
     return null
   }
 
-  private _edgeHit(px: number, py: number, ex: number, ey: number, ew: number, eh: number, h: number): Edge | null {
+  private _edgeHit(px: number, py: number, ex: number, ey: number, ew: number, eh: number, h: number, ewZone?: number): Edge | null {
     // Reject points outside the element
     if (px < ex || px > ex + ew || py < ey || py > ey + eh) return null
 
-    // Clamp handle size so left/right and top/bottom zones can never overlap
-    const hx = Math.min(h, ew / 2)
+    // E/W zone can be wider for pill-shaped elements (covers the full rounded cap)
+    const hx = Math.min(ewZone ?? h, ew / 2)
     const hy = Math.min(h, eh / 2)
 
     const inLeft   = px <= ex + hx
