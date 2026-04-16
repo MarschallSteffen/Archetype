@@ -112,10 +112,10 @@ export class FileMenu {
   /** Show or hide the active file name indicator next to the title. */
   setFileIndicator(filename: string | null) {
     if (filename) {
-      this.fileIndicator.textContent = `— ${filename}`
+      this.fileIndicator.innerHTML = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 14V2h8l4 4v8H2z"/><path d="M10 2v4h4"/><path d="M5 10h6M5 12h4"/></svg> ${filename}`
       this.fileIndicator.style.display = ''
     } else {
-      this.fileIndicator.textContent = ''
+      this.fileIndicator.innerHTML = ''
       this.fileIndicator.style.display = 'none'
     }
   }

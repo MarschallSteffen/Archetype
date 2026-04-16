@@ -69,6 +69,7 @@ export class ConnectionRenderer {
     private conn: Connection,
     _store: DiagramStore,
     private onClick: (conn: Connection, e: MouseEvent) => void,
+    private onDblClick?: (conn: Connection, labelEl: SVGTextElement) => void,
   ) {
     this.el = svgEl('g')
     this.el.classList.add('connection')
@@ -111,6 +112,10 @@ export class ConnectionRenderer {
 
     this.el.append(this.path, this.pathB, this.hitPath, this.srcMult, this.tgtMult, this.label, this.channelSymbol)
     this.el.addEventListener('click', e => this.onClick(conn, e))
+    this.el.addEventListener('dblclick', e => {
+      e.stopPropagation()
+      this.onDblClick?.(this.conn, this.label)
+    })
 
     _store.on(ev => {
       if (ev.type === 'connection:update' && (ev.payload as Connection).id === conn.id) {
@@ -256,11 +261,9 @@ export class ConnectionRenderer {
     const stereotype = conn.type === 'uc-extend' ? '«extend»' : conn.type === 'uc-include' ? '«include»' : null
     const labelText = conn.label || stereotype || ''
     this.label.textContent = labelText
-    if (labelText) {
-      const mid = pathMidpoint(x1, y1, srcPort, x2, y2, tgtPort, srcRect, tgtRect)
-      this.label.setAttribute('x', String(mid.x))
-      this.label.setAttribute('y', String(mid.y - 8))
-    }
+    const mid = pathMidpoint(x1, y1, srcPort, x2, y2, tgtPort, srcRect, tgtRect)
+    this.label.setAttribute('x', String(mid.x))
+    this.label.setAttribute('y', String(mid.y - 8))
 
     const mx = (x1 + x2) / 2
     const my = (y1 + y2) / 2

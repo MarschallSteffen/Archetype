@@ -494,6 +494,7 @@ function addSeqDiagramRenderer(sd: SequenceDiagram) {
     seqLayer,
     (sdId, lifeline, slot) => startSeqSlotDrag(sdId, lifeline.id, slot),
     (sdId, lifeline, msgIdx) => {
+      document.getElementById('msg-popover')?.remove()
       const currentSd = store.state.sequenceDiagrams.find(s => s.id === sdId)
       const currentLL = currentSd?.lifelines.find(l => l.id === lifeline.id)
       if (!currentSd || !currentLL) return
@@ -803,6 +804,15 @@ function addConnectionRenderer(conn: Connection) {
         store.updateConnection(c.id, { elbowMode: mode })
       },
     )
+  }, (c, labelEl) => {
+    // Dismiss popover before inline edit
+    dismissConnPopover?.()
+    dismissConnPopover = null
+    const current = store.state.connections.find(cn => cn.id === c.id)
+    if (!current) return
+    inlineEditor.edit(labelEl, current.label || '', (val) => {
+      store.updateConnection(c.id, { label: val })
+    })
   })
   connLayer.appendChild(r.el)
   connRenderers.set(conn.id, r)
@@ -1821,15 +1831,13 @@ function refreshSeqDiagram(sd: SequenceDiagram, sdR: SequenceDiagramRenderer) {
 
     renderSeqArrow(g, finalX1, absY, finalX2, absY, ev.kind)
 
-    if (ev.msg.label) {
-      const labelEl = document.createElementNS(SVG_NS_MAIN, 'text')
-      labelEl.classList.add('seq-conn-label')
-      labelEl.textContent = ev.msg.label
-      labelEl.setAttribute('x', String((finalX1 + finalX2) / 2))
-      labelEl.setAttribute('y', String(absY - 4))
-      labelEl.setAttribute('text-anchor', 'middle')
-      g.appendChild(labelEl)
-    }
+    const labelEl = document.createElementNS(SVG_NS_MAIN, 'text')
+    labelEl.classList.add('seq-conn-label')
+    labelEl.textContent = ev.msg.label || 'message'
+    labelEl.setAttribute('x', String((finalX1 + finalX2) / 2))
+    labelEl.setAttribute('y', String(absY - 4))
+    labelEl.setAttribute('text-anchor', 'middle')
+    g.appendChild(labelEl)
 
     seqConnLayer.appendChild(g)
 
@@ -1868,9 +1876,10 @@ function refreshSeqDiagram(sd: SequenceDiagram, sdR: SequenceDiagramRenderer) {
       )
     })
 
-    // Double-click on arrow label → inline rename
+    // Double-click on arrow → inline rename (dismiss popover first)
     g.addEventListener('dblclick', (e) => {
       e.stopPropagation()
+      document.getElementById('msg-popover')?.remove()
       const labelEl = g.querySelector<SVGTextElement>('.seq-conn-label')
       if (!labelEl) return
       const latestSd = store.state.sequenceDiagrams.find(s => s.id === sd.id)

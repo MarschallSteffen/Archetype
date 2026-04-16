@@ -5,10 +5,11 @@ export class InlineEditor {
     foreignObject: SVGForeignObjectElement
     input: HTMLInputElement
     onCommit: (value: string) => void
+    outsideListener: (e: MouseEvent) => void
   } | null = null
 
   /**
-   * Replace `textEl` with an editable input. Commits on Enter/blur, cancels on Escape.
+   * Replace `textEl` with an editable input. Commits on Enter/blur/click-outside, cancels on Escape.
    */
   edit(
     textEl: SVGTextElement,
@@ -17,12 +18,17 @@ export class InlineEditor {
   ) {
     this.cancel()
 
+    // If text is empty, temporarily set placeholder so getBBox returns a valid position
+    const wasEmpty = !textEl.textContent?.trim()
+    if (wasEmpty) textEl.textContent = '\u200B'  // zero-width space
     const bbox = textEl.getBBox()
+    if (wasEmpty) textEl.textContent = ''
+
     const fo = document.createElementNS(SVG_NS, 'foreignObject')
     fo.setAttribute('x', String(bbox.x - 4))
     fo.setAttribute('y', String(bbox.y - 2))
     fo.setAttribute('width', String(Math.max(bbox.width + 16, 120)))
-    fo.setAttribute('height', String(bbox.height + 8))
+    fo.setAttribute('height', String(Math.max(bbox.height + 8, 24)))
 
     const input = document.createElement('input')
     input.type = 'text'
@@ -34,6 +40,7 @@ export class InlineEditor {
     textEl.style.display = 'none'
 
     const commit = () => {
+      if (!this.active) return
       const val = input.value.trim()
       this.cleanup(textEl, fo)
       if (val) onCommit(val)
@@ -47,7 +54,13 @@ export class InlineEditor {
     })
     input.addEventListener('blur', commit)
 
-    this.active = { foreignObject: fo, input, onCommit }
+    // Click outside the input → commit (SVG clicks don't always steal focus from the input)
+    const outsideListener = (e: MouseEvent) => {
+      if (e.target !== input) commit()
+    }
+    setTimeout(() => document.addEventListener('mousedown', outsideListener), 50)
+
+    this.active = { foreignObject: fo, input, onCommit, outsideListener }
 
     requestAnimationFrame(() => {
       input.focus()
@@ -64,6 +77,9 @@ export class InlineEditor {
   }
 
   private cleanup(textEl: SVGTextElement, fo: SVGForeignObjectElement) {
+    if (this.active?.outsideListener) {
+      document.removeEventListener('mousedown', this.active.outsideListener)
+    }
     textEl.style.display = ''
     fo.remove()
     this.active = null
