@@ -23,6 +23,7 @@ export class FileMenu {
   private dropdown: HTMLElement
   private menuBtn: HTMLButtonElement
   private fileIndicator: HTMLSpanElement
+  private saveTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(container: HTMLElement, callbacks: FileMenuCallbacks) {
     container.innerHTML = ''
@@ -109,15 +110,53 @@ export class FileMenu {
     return this.titleInput.value.trim() || 'diagram'
   }
 
+  private _filename: string | null = null
+
+  private get fileIconSvg(): string {
+    return `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 14V2h8l4 4v8H2z"/><path d="M10 2v4h4"/><path d="M5 10h6M5 12h4"/></svg>`
+  }
+  private get spinnerSvg(): string {
+    return `<svg class="save-spin" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M14 8A6 6 0 1 1 8 2"/><polyline points="8 1 11 4 8 7" fill="currentColor" stroke="none"/></svg>`
+  }
+  private get checkSvg(): string {
+    return `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="2 9 6 13 14 4"/></svg>`
+  }
+
   /** Show or hide the active file name indicator next to the title. */
   setFileIndicator(filename: string | null) {
+    this._filename = filename
     if (filename) {
-      this.fileIndicator.innerHTML = `<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 14V2h8l4 4v8H2z"/><path d="M10 2v4h4"/><path d="M5 10h6M5 12h4"/></svg> ${filename}`
+      this.fileIndicator.innerHTML = `${this.fileIconSvg} ${filename}`
       this.fileIndicator.style.display = ''
+      this.fileIndicator.classList.remove('file-indicator--saving', 'file-indicator--saved', 'file-indicator--fadeout')
     } else {
       this.fileIndicator.innerHTML = ''
       this.fileIndicator.style.display = 'none'
     }
+  }
+
+  /** Cycle the file indicator icon: spinner → checkmark → file icon. */
+  notifySaved() {
+    if (!this._filename) return
+    if (this.saveTimer) clearTimeout(this.saveTimer)
+
+    // Phase 1: spinner
+    this.fileIndicator.innerHTML = `${this.spinnerSvg} ${this._filename}`
+    this.fileIndicator.classList.remove('file-indicator--saved', 'file-indicator--fadeout')
+    this.fileIndicator.classList.add('file-indicator--saving')
+
+    // Phase 2: checkmark
+    this.saveTimer = setTimeout(() => {
+      this.fileIndicator.innerHTML = `${this.checkSvg} ${this._filename}`
+      this.fileIndicator.classList.remove('file-indicator--saving', 'file-indicator--fadeout')
+      this.fileIndicator.classList.add('file-indicator--saved')
+
+      // Phase 3: snap back to file icon
+      this.saveTimer = setTimeout(() => {
+        this.fileIndicator.innerHTML = `${this.fileIconSvg} ${this._filename}`
+        this.fileIndicator.classList.remove('file-indicator--saving', 'file-indicator--saved')
+      }, 1500)
+    }, 400)
   }
 
   private toggleDropdown() {

@@ -168,11 +168,8 @@ export class DiagramStore {
     )
   }
 
-  /** Ensure arrays exist for diagrams loaded from old JSON, and run migrations. */
+  /** Ensure arrays exist and run auto-layout for elements without explicit positions. */
   private ensureNewFields() {
-    // Backfill elementType on classes/packages loaded from old JSON
-    for (const c of this.diagram.classes)  { if (!(c as any).elementType) (c as any).elementType = 'uml-class' }
-    for (const p of this.diagram.packages) { if (!(p as any).elementType) (p as any).elementType = 'uml-package' }
     if (!this.diagram.actors)    this.diagram.actors    = []
     if (!this.diagram.queues)    this.diagram.queues    = []
     if (!this.diagram.useCases)  this.diagram.useCases  = []
@@ -180,23 +177,106 @@ export class DiagramStore {
     if (!this.diagram.states)      this.diagram.states      = []
     if (!this.diagram.startStates) this.diagram.startStates = []
     if (!this.diagram.endStates)   this.diagram.endStates   = []
-    if (!this.diagram.sequenceDiagrams) {
-      this.diagram.sequenceDiagrams = []
-      const old = (this.diagram as any).sequenceLifelines as import('../entities/SequenceLifeline.ts').SequenceLifeline[] | undefined
-      if (old?.length) {
-        const minX = Math.min(...old.map(l => l.position.x))
-        const minY = Math.min(...old.map(l => l.position.y))
-        this.diagram.sequenceDiagrams.push({
-          id: crypto.randomUUID(),
-          elementType: 'seq-diagram',
-          position: { x: minX, y: minY },
-          size: { w: 0, h: 0 },
-          lifelines: old.map(ll => ({ ...ll, position: { x: ll.position.x - minX, y: 0 } })),
-        })
-      }
-      delete (this.diagram as any).sequenceLifelines
-    }
+    if (!this.diagram.sequenceDiagrams) this.diagram.sequenceDiagrams = []
     if (!this.diagram.combinedFragments) this.diagram.combinedFragments = []
+
+    if (this.getAllElementsFlat().some(el => (el as any)._needsLayout)) {
+      this.applyAutoLayout()
+    }
+  }
+
+  private getAllElementsFlat(): Array<{ id: string; position: Point; size: Size }> {
+    return [
+      ...this.diagram.classes,
+      ...this.diagram.packages,
+      ...this.diagram.storages,
+      ...this.diagram.actors,
+      ...this.diagram.queues,
+      ...this.diagram.useCases,
+      ...this.diagram.ucSystems,
+      ...this.diagram.states,
+      ...this.diagram.startStates,
+      ...this.diagram.endStates,
+      ...this.diagram.sequenceDiagrams,
+      ...this.diagram.combinedFragments,
+    ]
+  }
+
+  private applyAutoLayout() {
+    const COLUMN_GAP = 80
+    const ROW_GAP    = 60
+    const START_X    = 100
+    const START_Y    = 100
+
+    const allEls = this.getAllElementsFlat()
+    const toLayout = allEls.filter(el => (el as any)._needsLayout)
+    if (toLayout.length === 0) return
+
+    const idSet = new Set(toLayout.map(el => el.id))
+
+    // Build adjacency: id → ids it points to (within the unlayouted set)
+    const outgoing = new Map<string, Set<string>>()
+    const inDegree  = new Map<string, number>()
+    for (const el of toLayout) { outgoing.set(el.id, new Set()); inDegree.set(el.id, 0) }
+
+    for (const conn of this.diagram.connections) {
+      const src = conn.source.elementId
+      const tgt = conn.target.elementId
+      if (idSet.has(src) && idSet.has(tgt) && src !== tgt) {
+        outgoing.get(src)!.add(tgt)
+        inDegree.set(tgt, (inDegree.get(tgt) ?? 0) + 1)
+      }
+    }
+
+    // Kahn's topological sort
+    const sorted: string[] = []
+    const queue = toLayout.filter(el => inDegree.get(el.id) === 0).map(el => el.id)
+    while (queue.length) {
+      const id = queue.shift()!
+      sorted.push(id)
+      for (const next of outgoing.get(id) ?? []) {
+        const d = (inDegree.get(next) ?? 0) - 1
+        inDegree.set(next, d)
+        if (d === 0) queue.push(next)
+      }
+    }
+    // Cycle fallback: append any remaining nodes in insertion order
+    for (const el of toLayout) {
+      if (!sorted.includes(el.id)) sorted.push(el.id)
+    }
+
+    // Assign levels via BFS
+    const level = new Map<string, number>()
+    for (const id of sorted) {
+      let maxPredLevel = -1
+      for (const [predId, targets] of outgoing) {
+        if (targets.has(id)) {
+          maxPredLevel = Math.max(maxPredLevel, level.get(predId) ?? 0)
+        }
+      }
+      level.set(id, maxPredLevel + 1)
+    }
+
+    // Group by level
+    const maxLevel = Math.max(...Array.from(level.values()))
+    const byLevel: string[][] = Array.from({ length: maxLevel + 1 }, () => [])
+    for (const id of sorted) byLevel[level.get(id)!].push(id)
+
+    // Place elements column by column
+    const elById = new Map(toLayout.map(el => [el.id, el]))
+    let x = START_X
+    for (const col of byLevel) {
+      let maxW = 0
+      let y = START_Y
+      for (const id of col) {
+        const el = elById.get(id)!
+        el.position = { x, y }
+        ;(el as any)._needsLayout = false
+        y += el.size.h + ROW_GAP
+        maxW = Math.max(maxW, el.size.w)
+      }
+      x += maxW + COLUMN_GAP
+    }
   }
 
   // ── Classes ──────────────────────────────────────────────────────────────

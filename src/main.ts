@@ -23,6 +23,7 @@ import { InlineEditor } from './interaction/InlineEditor.ts'
 import { Toolbar, type Tool as ToolKind } from './ui/Toolbar.ts'
 import { FileMenu } from './ui/FileMenu.ts'
 import { EditMenu } from './ui/EditMenu.ts'
+import { AiPromptButton } from './ui/AiPromptButton.ts'
 import { showConnectionPopover } from './ui/ConnectionPopover.ts'
 import { showMsgPopover } from './ui/MessagePopover.ts'
 import { showElementPropertiesPanel, hideElementPropertiesPanel } from './ui/ElementPropertiesPanel.ts'
@@ -98,11 +99,10 @@ const fileMenuCallbacks = {
   },
   onOpen: () => {
     loadDiagramFromFile(d => {
-      closeActiveFile()
       store.load(d)
       saveDiagram(d)
       fileMenu.setTitle(d.name ?? 'Untitled')
-      fileMenu.setFileIndicator(null)
+      fileMenu.setFileIndicator(getActiveFileName())
     })
   },
   onSave: () => {
@@ -168,6 +168,12 @@ function updateEditMenu() {
 }
 
 store.on(ev => { if (ev.type === 'history:change') updateEditMenu() })
+
+// AI prompt button — pushed to the right end of the titlebar
+const aiBtnAnchor = document.createElement('div')
+aiBtnAnchor.classList.add('titlebar-right')
+titlebar.appendChild(aiBtnAnchor)
+new AiPromptButton(aiBtnAnchor)
 
 // Initialise title from loaded diagram
 fileMenu.setTitle(store.state.name ?? 'Untitled')
@@ -1422,6 +1428,7 @@ store.on(ev => {
   }
 
   saveDiagram(store.state)
+  fileMenu.notifySaved()
 })
 
 // ─── Connection line refresh ──────────────────────────────────────────────────
@@ -2270,6 +2277,7 @@ svg.addEventListener('mousedown', e => {
   panActive = true
   panStart = { x: e.clientX, y: e.clientY }
   vpStart  = { x: store.state.viewport.x, y: store.state.viewport.y }
+  canvasContainer.classList.add('pan-grabbing')
 })
 
 window.addEventListener('mousemove', e => {
@@ -2278,7 +2286,10 @@ window.addEventListener('mousemove', e => {
   applyViewport()
 })
 
-window.addEventListener('mouseup', () => { panActive = false })
+window.addEventListener('mouseup', () => {
+  panActive = false
+  canvasContainer.classList.remove('pan-grabbing')
+})
 
 svg.addEventListener('wheel', e => {
   e.preventDefault()
@@ -2301,6 +2312,13 @@ zoomCtrl.innerHTML = `
   <button id="zoom-reset" class="zoom-btn zoom-reset" title="Reset zoom">⟳</button>
 `
 canvasContainer.appendChild(zoomCtrl)
+
+// Pan mode cursor — keep grab cursor visible whenever pan tool is active
+toolbar.onToolChange(tool => {
+  canvasContainer.classList.toggle('pan-mode', tool === 'pan')
+  if (tool !== 'pan') canvasContainer.classList.remove('pan-grabbing')
+})
+if (toolbar.activeTool === 'pan') canvasContainer.classList.add('pan-mode')
 
 const zoomLabel = document.getElementById('zoom-label')!
 
