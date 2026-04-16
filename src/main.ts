@@ -1019,6 +1019,7 @@ function wireElementInteraction(
     if (target.tagName === 'foreignObject' || (target as Element).closest?.('foreignObject')) return
     e.stopPropagation()
     // Find the name text node to anchor the inline editor
+    if (!nameSelector) return
     const nameEl = el.querySelector<SVGTextElement>(`.${nameSelector}`)
     if (!nameEl) return
     inlineEditor.edit(nameEl, getName(), val => { if (val) updateName(val) })
