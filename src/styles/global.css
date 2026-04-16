@@ -777,7 +777,7 @@ body {
 
 /* ── Element properties panel ──────────────────────────────────────────── */
 .elem-props-panel {
-  transform: translateX(-50%);
+  transform: translateY(-50%);
   min-width: 160px;
   transition: opacity 0.12s;
 }

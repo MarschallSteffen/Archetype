@@ -6,6 +6,7 @@
 
 let currentPanel: HTMLElement | null = null
 let currentOutsideHandler: ((e: MouseEvent) => void) | null = null
+let pendingTimerId: ReturnType<typeof setTimeout> | null = null
 
 export function showElementPropertiesPanel(
   screenX: number,
@@ -61,13 +62,18 @@ export function showElementPropertiesPanel(
   const onOutside = (e: MouseEvent) => {
     if (!panel.contains(e.target as Node)) hideElementPropertiesPanel()
   }
-  setTimeout(() => {
+  pendingTimerId = setTimeout(() => {
+    pendingTimerId = null
     currentOutsideHandler = onOutside
     document.addEventListener('mousedown', onOutside)
   }, 150)
 }
 
 export function hideElementPropertiesPanel() {
+  if (pendingTimerId !== null) {
+    clearTimeout(pendingTimerId)
+    pendingTimerId = null
+  }
   if (currentOutsideHandler) {
     document.removeEventListener('mousedown', currentOutsideHandler)
     currentOutsideHandler = null

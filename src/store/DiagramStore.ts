@@ -357,7 +357,7 @@ export class DiagramStore {
   addSequenceDiagram(sd: SequenceDiagram)      { this.pushUndoSnapshot(); this.diagram.sequenceDiagrams.push(sd); this.emit('seq-diagram:add', sd) }
   updateSequenceDiagram(id: string, patch: Partial<SequenceDiagram>) {
     const el = this.diagram.sequenceDiagrams.find(s => s.id === id); if (!el) return
-    this.pushUndoSnapshot(); Object.assign(el, patch); this.emit('seq-diagram:update', el)
+    if (!this._undoGroupActive) this.pushUndoSnapshot(); Object.assign(el, patch); this.emit('seq-diagram:update', el)
   }
   removeSequenceDiagram(id: string) {
     this.pushUndoSnapshot()

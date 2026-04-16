@@ -57,7 +57,7 @@ import type { CombinedFragment } from './entities/CombinedFragment.ts'
 import type { Connection } from './entities/Connection.ts'
 import { absolutePortPosition } from './renderers/ports.ts'
 import { getElementConfig } from './config/registry.ts'
-import type { ElementKind, SelectableKind } from './types.ts'
+import type { ElementKind } from './types.ts'
 import { bestPortPair } from './renderers/routing.ts'
 import type { PortSide } from './renderers/routing.ts'
 import type { ElbowMode } from './entities/Connection.ts'
@@ -574,6 +574,8 @@ function startLifelineHDrag(sdId: string, llId: string, e: MouseEvent) {
   const startPt = getSvgPoint(e)
   const startX = ll.position.x
 
+  store.beginUndoGroup()
+
   function onMove(ev: MouseEvent) {
     const pt = getSvgPoint(ev)
     const dx = pt.x - startPt.x
@@ -587,6 +589,7 @@ function startLifelineHDrag(sdId: string, llId: string, e: MouseEvent) {
     })
   }
   function onUp() {
+    store.endUndoGroup()
     window.removeEventListener('mousemove', onMove)
     window.removeEventListener('mouseup', onUp)
   }
@@ -912,33 +915,44 @@ function showPropertiesForSelection() {
     hideElementPropertiesPanel(); return
   }
 
-  type Patchable = AnyElement & { multiInstance: boolean; flowReversed?: boolean }
-  const updateFns: Partial<Record<SelectableKind, (patch: { multiInstance?: boolean; flowReversed?: boolean }) => void>> = {
-    class:   p => store.updateClass(item.id, p),
-    storage: p => store.updateStorage(item.id, p),
-    actor:   p => store.updateActor(item.id, p),
-    queue:   p => store.updateQueue(item.id, p),
-  }
-  const updateFn = updateFns[item.kind]
-  if (!updateFn) { hideElementPropertiesPanel(); return }
+  type PatchFn = (patch: { multiInstance?: boolean; flowReversed?: boolean }) => void
 
-  const el = store.findAnyElement(item.id) as (Patchable | undefined)
-  if (!el) { hideElementPropertiesPanel(); return }
+  let elPosition: { x: number; y: number } | undefined
+  let elSize: { w: number; h: number } | undefined
+  let multiInstance = false
+  let flowReversed: boolean | undefined
+  let updateFn: PatchFn | undefined
+
+  if (item.kind === 'class') {
+    const found = store.state.classes.find(c => c.id === item.id)
+    if (found) { elPosition = found.position; elSize = found.size; multiInstance = found.multiInstance ?? false; updateFn = p => store.updateClass(item.id, p) }
+  } else if (item.kind === 'storage') {
+    const found = store.state.storages.find(s => s.id === item.id)
+    if (found) { elPosition = found.position; elSize = found.size; multiInstance = found.multiInstance ?? false; updateFn = p => store.updateStorage(item.id, p) }
+  } else if (item.kind === 'actor') {
+    const found = store.state.actors.find(a => a.id === item.id)
+    if (found) { elPosition = found.position; elSize = found.size; multiInstance = found.multiInstance ?? false; updateFn = p => store.updateActor(item.id, p) }
+  } else if (item.kind === 'queue') {
+    const found = store.state.queues.find(q => q.id === item.id)
+    if (found) { elPosition = found.position; elSize = found.size; multiInstance = found.multiInstance ?? false; flowReversed = found.flowReversed ?? false; updateFn = p => store.updateQueue(item.id, p) }
+  }
+
+  if (!elPosition || !elSize || !updateFn) { hideElementPropertiesPanel(); return }
 
   const d = store.state
   const svgRect = svg.getBoundingClientRect()
   const vp = d.viewport
-  const screenX = svgRect.left + (el.position.x + el.size.w / 2) * vp.zoom + vp.x
-  const screenY = svgRect.top  + el.position.y * vp.zoom + vp.y
+  const screenX = svgRect.left + (elPosition.x + elSize.w) * vp.zoom + vp.x + 8
+  const screenY = svgRect.top  + (elPosition.y + elSize.h / 2) * vp.zoom + vp.y
 
   const isQueue = item.kind === 'queue'
   showElementPropertiesPanel(
     screenX,
     screenY,
-    el.multiInstance,
-    (multiInstance) => updateFn({ multiInstance }),
-    isQueue ? (el.flowReversed ?? false) : undefined,
-    isQueue ? (reversed) => updateFn({ flowReversed: reversed }) : undefined,
+    multiInstance,
+    (val) => updateFn!({ multiInstance: val }),
+    isQueue ? (flowReversed ?? false) : undefined,
+    isQueue ? (reversed) => updateFn!({ flowReversed: reversed }) : undefined,
   )
 }
 
