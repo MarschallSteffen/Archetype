@@ -9,6 +9,8 @@
  *   Export PNG — rasterises the SVG to a transparent-background PNG
  */
 
+import { registerMenu, closeAllMenus } from './menuRegistry.ts'
+
 export interface FileMenuCallbacks {
   onNew:         () => void
   onOpen:        () => void
@@ -37,6 +39,7 @@ export class FileMenu {
     this.menuBtn.textContent = 'File'
     this.menuBtn.addEventListener('click', e => {
       e.stopPropagation()
+      closeAllMenus()
       this.toggleDropdown()
     })
 
@@ -100,6 +103,7 @@ export class FileMenu {
 
     // Close dropdown on outside click
     document.addEventListener('click', () => this.closeDropdown())
+    registerMenu(() => this.closeDropdown())
   }
 
   setTitle(title: string) {
