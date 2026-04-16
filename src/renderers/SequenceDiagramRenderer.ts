@@ -38,8 +38,11 @@ export class SequenceDiagramRenderer {
     store.on(ev => {
       if (ev.type === 'seq-diagram:update' && (ev.payload as SequenceDiagram).id === sd.id) {
         this.sd = ev.payload as SequenceDiagram
-        this.syncLifelineRenderers()
-        this.update(this.sd)
+        // Only sync lifeline renderer set (add/remove renderers for structural changes).
+        // update() and setSpineBottom() are driven by refreshSeqDiagram in main.ts,
+        // which runs in the earlier-registered main listener — calling them here again
+        // would reset spine.y2 back to computedH after setSpineBottom already fixed it.
+        this.syncLifelineRenderers(/* updateExisting= */ false)
       }
     })
 
@@ -47,7 +50,7 @@ export class SequenceDiagramRenderer {
     this.update(sd)
   }
 
-  private syncLifelineRenderers() {
+  private syncLifelineRenderers(updateExisting = true) {
     const sd = this.sd
     const incoming = new Set(sd.lifelines.map(ll => ll.id))
 
@@ -70,7 +73,7 @@ export class SequenceDiagramRenderer {
           (life, fromY) => this.onDragFromPort(sd.id, life, fromY),
         )
         this.llRenderers.set(ll.id, r)
-      } else {
+      } else if (updateExisting) {
         this.llRenderers.get(ll.id)!.update(ll)
       }
     }

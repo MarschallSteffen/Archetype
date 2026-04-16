@@ -1350,6 +1350,7 @@ store.on(ev => {
   // Special side-effects for specific events
   if (ev.type === 'seq-diagram:add')    refreshSequenceConnections()
   if (ev.type === 'seq-diagram:update') { refreshSequenceConnections(); refreshLifelineAddButtons() }
+  if (ev.type === 'seq-diagram:remove') refreshSequenceConnections()
   if (ev.type === 'connection:add')   { addConnectionRenderer(ev.payload as Connection); refreshConnections() }
   if (ev.type === 'connection:remove') {
     connRenderers.get(ev.payload as string)?.destroy()
@@ -1774,8 +1775,9 @@ function refreshSeqDiagram(sd: SequenceDiagram, sdR: SequenceDiagramRenderer) {
     if (maxW !== sd.size.w || maxH !== sd.size.h) {
       // Silent update — don't re-emit seqdiagram:update (would recurse)
       ;(sd as SequenceDiagram).size = { w: maxW, h: maxH }
-      sdR.update(sd)
     }
+    // Always sync the renderer (position may have changed from a drag)
+    sdR.update(sd)
     // Extend all lifeline spines to the diagram-wide max height
     for (const ll of lifelines) {
       sdR.getLifelineRenderer(ll.id)?.setSpineBottom(maxH)
