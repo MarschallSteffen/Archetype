@@ -1,4 +1,6 @@
-# diagrams-tool
+# Graph Modeller
+
+**Disclaimer:** _this tool is completely vibe coded_ 
 
 A browser-only multi-diagram modeller built with Vite and vanilla TypeScript. No backend, no framework — everything runs in the browser and persists to localStorage or a local file.
 
