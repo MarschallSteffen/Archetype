@@ -1,9 +1,11 @@
 /**
  * Floating properties panel shown when a single element is selected.
- * Currently exposes the "Multiple instances" toggle and, for queues, a flow-direction toggle.
+ * Exposes the "Multiple instances" toggle and, for queues, a flow-direction toggle.
+ * Positioned and dismissed consistently with Connection/Message popovers.
  */
 
 let currentPanel: HTMLElement | null = null
+let currentOutsideHandler: ((e: MouseEvent) => void) | null = null
 
 export function showElementPropertiesPanel(
   screenX: number,
@@ -54,9 +56,22 @@ export function showElementPropertiesPanel(
       onFlowReversed((e.target as HTMLInputElement).checked)
     })
   }
+
+  // Outside-click dismissal (same pattern as ConnectionPopover)
+  const onOutside = (e: MouseEvent) => {
+    if (!panel.contains(e.target as Node)) hideElementPropertiesPanel()
+  }
+  setTimeout(() => {
+    currentOutsideHandler = onOutside
+    document.addEventListener('mousedown', onOutside)
+  }, 150)
 }
 
 export function hideElementPropertiesPanel() {
+  if (currentOutsideHandler) {
+    document.removeEventListener('mousedown', currentOutsideHandler)
+    currentOutsideHandler = null
+  }
   currentPanel?.remove()
   currentPanel = null
 }

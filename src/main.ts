@@ -57,7 +57,7 @@ import type { CombinedFragment } from './entities/CombinedFragment.ts'
 import type { Connection } from './entities/Connection.ts'
 import { absolutePortPosition } from './renderers/ports.ts'
 import { getElementConfig } from './config/registry.ts'
-import type { ElementKind } from './types.ts'
+import type { ElementKind, SelectableKind } from './types.ts'
 import { bestPortPair } from './renderers/routing.ts'
 import type { PortSide } from './renderers/routing.ts'
 import type { ElbowMode } from './entities/Connection.ts'
@@ -75,8 +75,6 @@ const selection = new SelectionManager()
 const toolbar = new Toolbar(document.getElementById('toolbar')!)
 const inlineEditor = new InlineEditor()
 
-// ─── File menu ─────────────────────────────────────────────────────────────────
-
 // ─── SVG viewport transform group ─────────────────────────────────────────────
 
 const viewGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g')
@@ -87,11 +85,7 @@ svg.appendChild(viewGroup)
 
 const fileMenuCallbacks = {
   onNew: () => {
-    if (store.state.classes.length || store.state.packages.length ||
-        store.state.storages.length || store.state.actors.length ||
-        store.state.queues.length || store.state.useCases.length || store.state.ucSystems.length ||
-        store.state.states?.length || store.state.startStates?.length || store.state.endStates?.length ||
-        store.state.sequenceDiagrams?.length || store.state.combinedFragments?.length ||
+    if (ELEMENTS.some(desc => ((store.state[desc.collection] as any[])?.length ?? 0) > 0) ||
         store.state.connections.length) {
       if (!confirm('Create a new diagram? Unsaved changes will be lost.')) return
     }
@@ -909,46 +903,42 @@ function showPropertiesForSelection() {
   if (items.length !== 1) { hideElementPropertiesPanel(); return }
 
   const item = items[0]
-  const d = store.state
 
-  // Package: no properties panel
-  if (item.kind === 'package') {
+  // Kinds with no properties panel
+  if (item.kind === 'package' || item.kind === 'connection' ||
+      item.kind === 'seq-diagram' || item.kind === 'seq-fragment' ||
+      item.kind === 'uc-system' || item.kind === 'use-case' ||
+      item.kind === 'state' || item.kind === 'start-state' || item.kind === 'end-state') {
     hideElementPropertiesPanel(); return
   }
 
-  let el: AnyElement & { multiInstance: boolean } | undefined
-  let updateFn: (patch: { multiInstance?: boolean; flowReversed?: boolean }) => void = () => {}
-  let isQueue = false
-
-  if (item.kind === 'class') {
-    const c = d.classes.find(c => c.id === item.id)
-    if (c) { el = c as AnyElement & { multiInstance: boolean }; updateFn = p => store.updateClass(item.id, p) }
-  } else if (item.kind === 'storage') {
-    const s = d.storages.find(s => s.id === item.id)
-    if (s) { el = s; updateFn = p => store.updateStorage(item.id, p) }
-  } else if (item.kind === 'actor') {
-    const a = d.actors.find(a => a.id === item.id)
-    if (a) { el = a; updateFn = p => store.updateActor(item.id, p) }
-  } else if (item.kind === 'queue') {
-    const q = d.queues.find(q => q.id === item.id)
-    if (q) { el = q; updateFn = p => store.updateQueue(item.id, p); isQueue = true }
+  type Patchable = AnyElement & { multiInstance: boolean; flowReversed?: boolean }
+  const updateFns: Partial<Record<SelectableKind, (patch: { multiInstance?: boolean; flowReversed?: boolean }) => void>> = {
+    class:   p => store.updateClass(item.id, p),
+    storage: p => store.updateStorage(item.id, p),
+    actor:   p => store.updateActor(item.id, p),
+    queue:   p => store.updateQueue(item.id, p),
   }
+  const updateFn = updateFns[item.kind]
+  if (!updateFn) { hideElementPropertiesPanel(); return }
 
+  const el = store.findAnyElement(item.id) as (Patchable | undefined)
   if (!el) { hideElementPropertiesPanel(); return }
 
+  const d = store.state
   const svgRect = svg.getBoundingClientRect()
   const vp = d.viewport
-  const screenX = svgRect.left + (el.position.x + el.size.w) * vp.zoom + vp.x + 12
+  const screenX = svgRect.left + (el.position.x + el.size.w / 2) * vp.zoom + vp.x
   const screenY = svgRect.top  + el.position.y * vp.zoom + vp.y
 
-  const queue = isQueue ? (el as AnyElement & { flowReversed?: boolean }) : undefined
+  const isQueue = item.kind === 'queue'
   showElementPropertiesPanel(
     screenX,
     screenY,
     el.multiInstance,
     (multiInstance) => updateFn({ multiInstance }),
-    queue ? (queue.flowReversed ?? false) : undefined,
-    queue ? (reversed) => updateFn({ flowReversed: reversed }) : undefined,
+    isQueue ? (el.flowReversed ?? false) : undefined,
+    isQueue ? (reversed) => updateFn({ flowReversed: reversed }) : undefined,
   )
 }
 
@@ -1145,23 +1135,19 @@ function wireStateInteraction(r: StateRenderer, state: State) {
 }
 
 function wireStartStateInteraction(r: StartStateRenderer, state: StartState) {
-  r.el.addEventListener('mousedown', e => {
-    if (connect.isConnecting) return
-    if (toolbar.activeTool === 'pan') return
-    e.stopPropagation()
-    selection.select({ kind: 'start-state', id: state.id }, e.shiftKey)
-    drag.startDrag({ kind: 'start-state', id: state.id }, e, selection.items)
-  })
+  wireElementInteraction(
+    r.el, 'start-state', state.id,
+    () => { const s = r.getRenderedSize(); const c = store.state.startStates.find(s => s.id === state.id) ?? state; return { x: c.position.x, y: c.position.y, w: s.w, h: s.h } },
+    '', () => '', () => {},
+  )
 }
 
 function wireEndStateInteraction(r: EndStateRenderer, state: EndState) {
-  r.el.addEventListener('mousedown', e => {
-    if (connect.isConnecting) return
-    if (toolbar.activeTool === 'pan') return
-    e.stopPropagation()
-    selection.select({ kind: 'end-state', id: state.id }, e.shiftKey)
-    drag.startDrag({ kind: 'end-state', id: state.id }, e, selection.items)
-  })
+  wireElementInteraction(
+    r.el, 'end-state', state.id,
+    () => { const s = r.getRenderedSize(); const c = store.state.endStates.find(s => s.id === state.id) ?? state; return { x: c.position.x, y: c.position.y, w: s.w, h: s.h } },
+    '', () => '', () => {},
+  )
 }
 
 /**
@@ -2360,18 +2346,10 @@ function rebuildAll() {
   connRenderers.clear()
 
   const d = store.state
-  d.packages.forEach(addPackageRenderer)
-  d.storages.forEach(addStorageRenderer)
-  d.actors.forEach(addActorRenderer)
-  d.queues.forEach(addQueueRenderer)
-  d.ucSystems.forEach(addUCSystemRenderer)
-  d.useCases.forEach(addUseCaseRenderer)
-  d.states?.forEach(addStateRenderer)
-  d.startStates?.forEach(addStartStateRenderer)
-  d.endStates?.forEach(addEndStateRenderer)
-  d.sequenceDiagrams?.forEach(addSeqDiagramRenderer)
-  d.combinedFragments?.forEach(addSeqFragmentRenderer)
-  d.classes.forEach(addClassRenderer)
+  for (const desc of ELEMENTS) {
+    const col = (d[desc.collection] as Array<any>) ?? []
+    col.forEach(desc.addRenderer)
+  }
   d.connections.forEach(addConnectionRenderer)
   refreshConnections()
   refreshSequenceConnections()

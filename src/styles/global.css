@@ -46,6 +46,7 @@ body {
 }
 .titlebar-menu-btn:hover,
 .titlebar-menu-btn.open { background: var(--ctp-surface0); color: var(--ctp-text); }
+.titlebar-menu-btn:focus-visible { outline: 2px solid var(--ctp-lavender); outline-offset: 1px; }
 
 .titlebar-dropdown {
   position: absolute;
@@ -79,6 +80,12 @@ body {
   white-space: nowrap;
 }
 .titlebar-menu-item:hover { background: var(--ctp-surface0); }
+.titlebar-menu-item:focus-visible { outline: 2px solid var(--ctp-lavender); outline-offset: -2px; }
+.titlebar-menu-item:disabled {
+  color: var(--ctp-overlay0);
+  cursor: default;
+  pointer-events: none;
+}
 .titlebar-menu-item .menu-shortcut {
   margin-left: auto;
   font-size: 11px;
@@ -162,6 +169,7 @@ body {
   width: 100%; height: 100%;
   overflow: visible;
   cursor: default;
+  user-select: none;
 }
 
 /* ── Popover layer ─────────────────────────────────────────────────────── */
@@ -190,6 +198,7 @@ body {
 }
 .tool-btn:hover { background: var(--ctp-surface0); color: var(--ctp-text); }
 .tool-btn.active { background: var(--ctp-surface1); color: var(--ctp-lavender); }
+.tool-btn:focus-visible { outline: 2px solid var(--ctp-lavender); outline-offset: 1px; }
 .tool-btn svg { width: 18px; height: 18px; }
 
 /* ── Tool groups (collapsible sections) ────────────────────────────────── */
@@ -310,7 +319,6 @@ body {
   dominant-baseline: middle;
 }
 .uml-package.selected .pkg-bg { stroke: var(--ctp-lavender); stroke-width: 2; }
-.uml-package:hover { opacity: 0.9; }
 
 /* ── Connection ports ──────────────────────────────────────────────────── */
 .port {
@@ -432,6 +440,7 @@ body {
 
 /* ── Hover state — subtle opacity for all draggable element groups ─────── */
 .uml-class:hover,
+.uml-package:hover,
 .uml-storage:hover,
 .uml-actor:hover,
 .uml-queue:hover,
@@ -661,6 +670,12 @@ body {
   margin-top: 2px;
 }
 
+.popover-section-separator {
+  border: none;
+  border-top: 1px solid var(--ctp-surface1);
+  margin: 2px 0;
+}
+
 .conn-type-row {
   display: flex;
   gap: 3px;
@@ -738,10 +753,10 @@ body {
 }
 
 .conn-elbow-btn {
-  width: 28px;
-  height: 24px;
+  width: 32px;
+  height: 28px;
   border: 1px solid var(--ctp-surface2);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--ctp-surface0);
   color: var(--ctp-subtext0);
   font-size: 14px;
@@ -751,6 +766,7 @@ body {
   justify-content: center;
   padding: 0;
   flex: 1;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
 }
 .conn-elbow-btn:hover { background: var(--ctp-surface1); color: var(--ctp-text); }
 .conn-elbow-btn.active {
@@ -761,7 +777,7 @@ body {
 
 /* ── Element properties panel ──────────────────────────────────────────── */
 .elem-props-panel {
-  transform: translate(0, 0);
+  transform: translateX(-50%);
   min-width: 160px;
   transition: opacity 0.12s;
 }

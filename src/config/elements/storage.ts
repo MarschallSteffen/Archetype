@@ -1,5 +1,5 @@
 import type { ElementConfig } from '../ElementConfig.ts'
-import { CARDINAL_PORTS } from './umlClass.ts'
+import { CARDINAL_PORTS } from '../../renderers/ports.ts'
 
 /**
  * Storage element — rounded rectangle, data store.

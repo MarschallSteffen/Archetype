@@ -111,6 +111,7 @@ export function showConnectionPopover(
   const flipBtn = showFlip ? `<button class="conn-flip-btn" title="Flip / reverse arrow direction" aria-label="Flip / reverse arrow direction">${S('<path d="M4 5l-3 3 3 3"/><path d="M12 5l3 3-3 3"/><line x1="1" y1="8" x2="15" y2="8"/>')}</button>` : ''
 
   const multHtml = showMultiplicity ? `
+    <hr class="popover-section-separator"/>
     <div class="popover-section-label">Multiplicity</div>
     <div class="conn-mult-row">
       <select id="cp-src" class="conn-mult-sel" title="Source multiplicity">
@@ -125,6 +126,7 @@ export function showConnectionPopover(
 
   const activeElbow: ElbowMode = current?.elbowMode ?? 'auto'
   const elbowHtml = onElbowChange ? `
+    <hr class="popover-section-separator"/>
     <div class="popover-section-label">Routing</div>
     <div class="conn-elbow-row">
       <button class="conn-elbow-btn${activeElbow === 'auto' ? ' active' : ''}" data-elbow="auto" title="Auto route" aria-label="Auto route">${S('<circle cx="8" cy="8" r="2"/><line x1="8" y1="2" x2="8" y2="5"/><line x1="8" y1="11" x2="8" y2="14"/><line x1="2" y1="8" x2="5" y2="8"/><line x1="11" y1="8" x2="14" y2="8"/>')}</button>

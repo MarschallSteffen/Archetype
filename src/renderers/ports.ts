@@ -1,6 +1,14 @@
 /** The four cardinal port sides */
 export const PORT_SIDES = ['n', 'e', 's', 'w'] as const
 
+/** Standard 4-port layout shared by most element types */
+export const CARDINAL_PORTS = [
+  { id: 'n', xFrac: 0.5, yFrac: 0 },
+  { id: 'e', xFrac: 1,   yFrac: 0.5 },
+  { id: 's', xFrac: 0.5, yFrac: 1 },
+  { id: 'w', xFrac: 0,   yFrac: 0.5 },
+]
+
 /**
  * Return the local (element-relative) SVG coordinates of a port given
  * the element's width and height.

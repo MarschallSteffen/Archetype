@@ -1,12 +1,6 @@
 import type { ElementConfig } from '../ElementConfig.ts'
-
-/** Standard 4-port layout shared by most element types */
-export const CARDINAL_PORTS = [
-  { id: 'n', xFrac: 0.5, yFrac: 0 },
-  { id: 'e', xFrac: 1,   yFrac: 0.5 },
-  { id: 's', xFrac: 0.5, yFrac: 1 },
-  { id: 'w', xFrac: 0,   yFrac: 0.5 },
-]
+import { CARDINAL_PORTS } from '../../renderers/ports.ts'
+export { CARDINAL_PORTS }
 
 export const umlClassConfig: ElementConfig = {
   type: 'uml-class',
