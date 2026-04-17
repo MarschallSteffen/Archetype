@@ -50,6 +50,55 @@ export function injectMarkerDefs(svg: SVGSVGElement) {
   })
 
   svg.insertBefore(defs, svg.firstChild)
+
+  // ── Label backdrop filter ─────────────────────────────────────────────────
+  // Soft glow behind connection/sequence labels so they read over crossing lines.
+  // feMorphology dilate expands the text alpha → feGaussianBlur softens it →
+  // feFlood+feComposite fills it with the base colour → feMerge composites
+  // the blurred backdrop beneath the original text.
+  const filter = svgEl('filter') as SVGFilterElement
+  filter.id = 'label-backdrop'
+  filter.setAttribute('x', '-20%')
+  filter.setAttribute('y', '-40%')
+  filter.setAttribute('width', '140%')
+  filter.setAttribute('height', '180%')
+  filter.setAttribute('color-interpolation-filters', 'sRGB')
+
+  // 1. Dilate: thicken the glyph alpha so the halo extends beyond letter edges
+  const dilate = svgEl('feMorphology') as SVGFEMorphologyElement
+  dilate.setAttribute('operator', 'dilate')
+  dilate.setAttribute('radius', '3')
+  dilate.setAttribute('in', 'SourceAlpha')
+  dilate.setAttribute('result', 'expanded')
+
+  // 2. Blur the expanded alpha for soft, rounded edges
+  const blur = svgEl('feGaussianBlur') as SVGFEGaussianBlurElement
+  blur.setAttribute('stdDeviation', '2')
+  blur.setAttribute('in', 'expanded')
+  blur.setAttribute('result', 'blurred')
+
+  // 3. Flood with background colour (CSS var resolved at render time via currentColor trick:
+  //    we use a feFlood with flood-color driven by a CSS variable on the filter element)
+  const flood = svgEl('feFlood') as SVGFEFloodElement
+  flood.setAttribute('flood-color', 'var(--ctp-base)')
+  flood.setAttribute('flood-opacity', '0.82')
+  flood.setAttribute('result', 'colour')
+
+  // 4. Clip flood to the blurred alpha shape
+  const composite = svgEl('feComposite') as SVGFECompositeElement
+  composite.setAttribute('in', 'colour')
+  composite.setAttribute('in2', 'blurred')
+  composite.setAttribute('operator', 'in')
+  composite.setAttribute('result', 'backdrop')
+
+  // 5. Merge: backdrop below, original text on top
+  const merge = svgEl('feMerge') as SVGFEMergeElement
+  const n1 = svgEl('feMergeNode') as SVGFEMergeNodeElement; n1.setAttribute('in', 'backdrop')
+  const n2 = svgEl('feMergeNode') as SVGFEMergeNodeElement; n2.setAttribute('in', 'SourceGraphic')
+  merge.append(n1, n2)
+
+  filter.append(dilate, blur, flood, composite, merge)
+  defs.appendChild(filter)
 }
 
 const DASH_TYPES: ConnectionType[] = ['dependency', 'realization', 'uc-extend', 'uc-include']
@@ -90,6 +139,9 @@ export class ConnectionRenderer {
   private label: SVGTextElement
   // Request channel symbol (circle + R + arrow)
   private channelSymbol: SVGGElement
+  // Cached midpoint and label visibility — used by deconfliction pass
+  private _lastMid: { x: number; y: number; angle: number } | null = null
+  private _labelVisible = false
 
   constructor(
     private conn: Connection,
@@ -247,6 +299,8 @@ export class ConnectionRenderer {
     const mid = pathMidpoint(x1, y1, srcPort, x2, y2, tgtPort, srcRect, tgtRect)
     this.label.setAttribute('x', String(mid.x))
     this.label.setAttribute('y', String(mid.y - 8))
+    this._lastMid = mid
+    this._labelVisible = !!labelText
 
     // Position channel symbol (request type only) at midpoint
     if (conn.type === 'request') {
@@ -272,5 +326,23 @@ export class ConnectionRenderer {
   setSelected(selected: boolean) {
     this.el.classList.toggle('selected', selected)
   }
+
+  /** Returns the computed path midpoint if this connection has a visible label, else null. */
+  getLabelMidpoint(): { x: number; y: number } | null {
+    return (this._labelVisible && this._lastMid) ? this._lastMid : null
+  }
+
+  /**
+   * Reposition the label (and channel symbol if active) without re-running updatePoints.
+   * Called by the deconfliction pass in refreshConnections.
+   */
+  setLabelPosition(x: number, y: number) {
+    this.label.setAttribute('x', String(x))
+    this.label.setAttribute('y', String(y - 8))
+    if (this._lastMid && this.channelSymbol.style.display !== 'none') {
+      this.channelSymbol.setAttribute('transform', `translate(${x},${y})`)
+    }
+  }
+
   destroy() { this.el.remove() }
 }

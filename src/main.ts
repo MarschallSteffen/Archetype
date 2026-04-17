@@ -68,6 +68,8 @@ import type { ElementKind } from './types.ts'
 import { bestPortPair } from './renderers/routing.ts'
 import type { PortSide } from './renderers/routing.ts'
 import type { ElbowMode } from './entities/Connection.ts'
+import { deconflict, type LabelBox } from './renderers/LabelDeconflictLayer.ts'
+import { estimateTextWidth } from './renderers/svgUtils.ts'
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
@@ -1884,6 +1886,29 @@ function refreshConnections() {
     const srcRect = { x: s1Pos.x, y: s1Pos.y, w: s1Size.w, h: s1Size.h }
     const tgtRect = { x: s2Pos.x, y: s2Pos.y, w: s2Size.w, h: s2Size.h }
     r.updatePoints(s.x, s.y, t.x, t.y, srcPort, tgtPort, conn, 0, srcRect, tgtRect)
+  }
+
+  // ── Pass 4: label deconfliction ───────────────────────────────────────────
+  const LABEL_FONT_SIZE = 12
+  const LABEL_H = LABEL_FONT_SIZE + 4
+  const connLabelBoxes: LabelBox[] = []
+
+  for (const conn of store.state.connections) {
+    const r = connRenderers.get(conn.id)
+    if (!r) continue
+    const mid = r.getLabelMidpoint()
+    if (!mid) continue
+    const text = conn.label
+      || (conn.type === 'uc-extend' ? '«extend»' : conn.type === 'uc-include' ? '«include»' : '')
+    if (!text) continue
+    connLabelBoxes.push({ id: conn.id, x: mid.x, y: mid.y, w: estimateTextWidth(text, LABEL_FONT_SIZE) + 4, h: LABEL_H })
+  }
+
+  if (connLabelBoxes.length > 1) {
+    const results = deconflict([{ name: 'conn-labels', boxes: connLabelBoxes }])
+    for (const [id, pos] of results) {
+      connRenderers.get(id)?.setLabelPosition(pos.x, pos.y)
+    }
   }
 }
 

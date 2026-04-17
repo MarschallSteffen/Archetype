@@ -606,10 +606,12 @@ body {
   fill: var(--ctp-subtext0);
   font-size: 11px;
   text-anchor: middle;
+  filter: url(#label-backdrop);
 }
 .connection .multiplicity {
   fill: var(--ctp-subtext0);
   font-size: 11px;
+  filter: url(#label-backdrop);
 }
 
 /* ── Resize handles ────────────────────────────────────────────────────── */
@@ -1243,6 +1245,7 @@ body {
   font-family: inherit;
   cursor: text;
   user-select: none;
+  filter: url(#label-backdrop);
 }
 .seq-conn-group:hover .seq-conn-label { fill: var(--ctp-lavender); }
 .seq-conn-group.seq-conn-selected .seq-conn-label { fill: var(--ctp-blue); }
