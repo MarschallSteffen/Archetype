@@ -20,64 +20,26 @@ import { parseMethod, serializeMethod } from '../entities/Method.ts'
 import { getElementConfig } from '../config/registry.ts'
 import { LATTE, PRINT } from '../themes/catppuccin.ts'
 
-// ─── JSON persistence ────────────────────────────────────────────────────────
+// ─── JSON persistence (localStorage only) ────────────────────────────────────
 
 const LS_JSON = 'archetype:diagram'
 
-/** Active file handle for continuous autosave. Null = no file open. */
+/** Active file handle for continuous autosave as .arch.png. Null = no file open. */
 let activeFileHandle: FileSystemFileHandle | null = null
 
 export function getActiveFileName(): string | null {
   return activeFileHandle?.name ?? null
 }
 
+/** Save to localStorage (and autosave to active .arch.png handle if open). */
 export function saveDiagram(diagram: Diagram) {
-  const v2 = serializeDiagramV2(diagram)
-  localStorage.setItem(LS_JSON, JSON.stringify(v2, null, 2))
+  localStorage.setItem(LS_JSON, JSON.stringify(serializeDiagramV2(diagram), null, 2))
   if (activeFileHandle) {
-    writeToHandle(activeFileHandle, v2).catch(() => {
-      activeFileHandle = null
-    })
-  }
-}
-
-async function writeToHandle(handle: FileSystemFileHandle, data: unknown): Promise<void> {
-  const writable = await handle.createWritable()
-  await writable.write(JSON.stringify(data, null, 2))
-  await writable.close()
-}
-
-/**
- * Open the native Save File picker, store the handle, and write immediately.
- * Subsequent calls to `saveDiagram` will autosave to this file.
- * Pass `forceNew = true` to always show the picker (Save As behaviour).
- */
-export async function openAndSaveToFile(
-  diagram: Diagram,
-  suggestedName = 'diagram.json',
-  forceNew = false,
-): Promise<boolean> {
-  if (!('showSaveFilePicker' in window)) {
-    saveDiagramToFile(diagram, suggestedName)
-    return true
-  }
-  if (activeFileHandle && !forceNew) {
-    await writeToHandle(activeFileHandle, serializeDiagramV2(diagram))
-    return true
-  }
-  try {
-    const handle = await (window as typeof window & {
-      showSaveFilePicker: (opts?: unknown) => Promise<FileSystemFileHandle>
-    }).showSaveFilePicker({
-      suggestedName,
-      types: [{ description: 'Diagram JSON', accept: { 'application/json': ['.json'] } }],
-    })
-    activeFileHandle = handle
-    await writeToHandle(handle, serializeDiagramV2(diagram))
-    return true
-  } catch (err: unknown) {
-    if (err instanceof DOMException && err.name === 'AbortError') return false
-    throw err
+    buildArchPngBytes(diagram).then(bytes => {
+      activeFileHandle!.createWritable()
+        .then(w => w.write(bytes.buffer as ArrayBuffer).then(() => w.close()))
+        .catch(() => { activeFileHandle = null })
+    }).catch(() => { activeFileHandle = null })
   }
 }
 
@@ -91,31 +53,153 @@ export function setActiveFileHandle(handle: FileSystemFileHandle | null) {
   activeFileHandle = handle
 }
 
-/** Trigger a browser download of the diagram as a .json file (no handle). */
-export function saveDiagramToFile(diagram: Diagram, filename = 'diagram.json') {
-  const json = JSON.stringify(serializeDiagramV2(diagram), null, 2)
-  const blob = new Blob([json], { type: 'application/json' })
-  triggerDownload(blob, filename)
+/**
+ * Open the native Save File picker for a .arch.png, store the handle, and write immediately.
+ * Subsequent calls to `saveDiagram` will autosave to this file.
+ * Pass `forceNew = true` to always show the picker (Save As behaviour).
+ */
+export async function openAndSaveToFile(
+  diagram: Diagram,
+  suggestedName = 'diagram.arch.png',
+  forceNew = false,
+): Promise<boolean> {
+  const bytes = await buildArchPngBytes(diagram)
+  if (!('showSaveFilePicker' in window)) {
+    triggerDownload(new Blob([bytes.buffer as ArrayBuffer], { type: 'image/png' }), suggestedName)
+    return true
+  }
+  if (activeFileHandle && !forceNew) {
+    const w = await activeFileHandle.createWritable()
+    await w.write(bytes.buffer as ArrayBuffer)
+    await w.close()
+    return true
+  }
+  try {
+    const handle = await (window as typeof window & {
+      showSaveFilePicker: (opts?: unknown) => Promise<FileSystemFileHandle>
+    }).showSaveFilePicker({
+      suggestedName,
+      types: [{ description: 'Archetype diagram', accept: { 'image/png': ['.png'] } }],
+    })
+    activeFileHandle = handle
+    const w = await handle.createWritable()
+    await w.write(bytes.buffer as ArrayBuffer)
+    await w.close()
+    return true
+  } catch (err: unknown) {
+    if (err instanceof DOMException && err.name === 'AbortError') return false
+    throw err
+  }
 }
 
-// ─── PNG export ──────────────────────────────────────────────────────────────
+// ─── .arch.png — PNG with embedded diagram JSON ──────────────────────────────
+
+const ARCH_KEYWORD = 'archetype-diagram'
 
 /**
- * Render the current SVG diagram to a PNG and trigger a download.
+ * Inject an iTXt chunk carrying the diagram JSON into raw PNG bytes.
+ * iTXt structure (after chunk length + type):
+ *   keyword\0  compression-flag(0)  compression-method(0)  language-tag\0  translated-keyword\0  text
  */
-export async function exportDiagramToPng(
-  svgEl: SVGSVGElement,
-  viewGroup: SVGGElement,
-  filename = 'diagram',
-): Promise<void> {
-  const PADDING = 48
+function injectPngiTxt(pngBytes: Uint8Array, keyword: string, text: string): Uint8Array {
+  const enc = new TextEncoder()
+  const kw  = enc.encode(keyword)
+  const txt = enc.encode(text)
+  // chunk data: keyword + \0 + 0 + 0 + \0 + \0 + text
+  const data = new Uint8Array(kw.length + 3 + 1 + 1 + txt.length)
+  data.set(kw, 0)
+  // \0 compression-flag=0 compression-method=0 \0(lang) \0(translated-kw)
+  data[kw.length]     = 0
+  data[kw.length + 1] = 0
+  data[kw.length + 2] = 0
+  data[kw.length + 3] = 0
+  data[kw.length + 4] = 0
+  data.set(txt, kw.length + 5)
 
+  const type = enc.encode('iTXt')
+  const len  = data.length
+  const chunk = new Uint8Array(12 + len)
+  const view  = new DataView(chunk.buffer)
+  view.setUint32(0, len)
+  chunk.set(type, 4)
+  chunk.set(data, 8)
+  view.setUint32(8 + len, crc32(chunk.subarray(4, 8 + len)))
+
+  // Insert before IEND chunk (last 12 bytes of a valid PNG)
+  const out = new Uint8Array(pngBytes.length + chunk.length)
+  out.set(pngBytes.subarray(0, pngBytes.length - 12))
+  out.set(chunk, pngBytes.length - 12)
+  out.set(pngBytes.subarray(pngBytes.length - 12), pngBytes.length - 12 + chunk.length)
+  return out
+}
+
+/** Extract the text value of the first iTXt chunk matching `keyword`, or null. */
+function extractPngiTxt(pngBytes: Uint8Array, keyword: string): string | null {
+  const dec = new TextDecoder()
+  const enc = new TextEncoder()
+  const kw  = enc.encode(keyword)
+  let i = 8 // skip PNG signature
+  while (i + 12 <= pngBytes.length) {
+    const view  = new DataView(pngBytes.buffer, pngBytes.byteOffset)
+    const len   = view.getUint32(i)
+    const type  = dec.decode(pngBytes.subarray(i + 4, i + 8))
+    if (type === 'IEND') break
+    if (type === 'iTXt') {
+      const data = pngBytes.subarray(i + 8, i + 8 + len)
+      // check keyword match
+      let match = true
+      for (let k = 0; k < kw.length; k++) {
+        if (data[k] !== kw[k]) { match = false; break }
+      }
+      if (match && data[kw.length] === 0) {
+        // skip: null + compression-flag + compression-method + lang-null + translated-null
+        const textStart = kw.length + 5
+        return dec.decode(data.subarray(textStart))
+      }
+    }
+    i += 12 + len
+  }
+  return null
+}
+
+/** CRC-32 for PNG chunk integrity. */
+function crc32(data: Uint8Array): number {
+  let crc = 0xFFFFFFFF
+  for (const byte of data) {
+    crc ^= byte
+    for (let k = 0; k < 8; k++) crc = (crc & 1) ? (crc >>> 1) ^ 0xEDB88320 : crc >>> 1
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0
+}
+
+/**
+ * Render the diagram SVG to a PNG and inject the diagram JSON as an iTXt chunk.
+ * Returns the raw bytes — used by both save-to-file and download flows.
+ */
+async function buildArchPngBytes(diagram: Diagram): Promise<Uint8Array> {
+  // If there's no SVG context (called from autosave before first render), skip rendering.
+  // We only get here via saveDiagram which always has a live SVG, so this is safe.
+  const svgEl    = document.querySelector<SVGSVGElement>('#canvas')
+  const viewGroup = document.querySelector<SVGGElement>('#view-group')
+  if (!svgEl || !viewGroup) throw new Error('SVG not ready')
+
+  const PADDING = 48
   const savedTransform = viewGroup.getAttribute('transform') ?? ''
   viewGroup.setAttribute('transform', '')
   const bbox = viewGroup.getBBox()
   viewGroup.setAttribute('transform', savedTransform)
 
-  if (bbox.width === 0 || bbox.height === 0) return
+  if (bbox.width === 0 || bbox.height === 0) {
+    // Empty diagram — return a 1×1 transparent PNG with the JSON
+    const tiny = new Uint8Array([
+      137,80,78,71,13,10,26,10, // PNG signature
+      0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,2,0,0,0,144,119,83,222, // IHDR
+      0,0,0,12,73,68,65,84,8,215,99,248,207,192,0,0,0,2,0,1,231,21,33,69, // IDAT
+      0,0,0,0,73,69,78,68,174,66,96,130, // IEND
+    ])
+    const jsonStr = JSON.stringify(serializeDiagramV2(diagram))
+    return injectPngiTxt(tiny, ARCH_KEYWORD, jsonStr)
+  }
 
   const contentW = Math.ceil(bbox.width  + PADDING * 2)
   const contentH = Math.ceil(bbox.height + PADDING * 2)
@@ -126,51 +210,76 @@ export async function exportDiagramToPng(
   clonedSvg.setAttribute('width',   String(contentW))
   clonedSvg.setAttribute('height',  String(contentH))
   clonedSvg.setAttribute('viewBox', `${offsetX} ${offsetY} ${contentW} ${contentH}`)
-
   clonedSvg.querySelectorAll('.rubber-band, .snap-guides').forEach(el => el.remove())
 
-  // Replace <foreignObject> elements with SVG <text> to avoid canvas taint
   const NS = 'http://www.w3.org/2000/svg'
+  const FONT_SIZE = 12
+  const FONT_FAMILY = 'ui-sans-serif, system-ui, sans-serif'
+  const LINE_HEIGHT = FONT_SIZE * 1.4
+  const PAD_X = 8
+  const PAD_Y = 6
+
+  // Reuse the renderer's measure context for word-wrapping
+  const measureCtx = document.createElement('canvas').getContext('2d')!
+  measureCtx.font = `${FONT_SIZE}px ${FONT_FAMILY}`
+  function wrapWords(text: string, maxWidth: number): string[] {
+    const words = text.split(' ')
+    const result: string[] = []
+    let line = ''
+    for (const word of words) {
+      const candidate = line ? `${line} ${word}` : word
+      if (measureCtx.measureText(candidate).width > maxWidth && line) { result.push(line); line = word }
+      else line = candidate
+    }
+    if (line) result.push(line)
+    return result
+  }
+
   clonedSvg.querySelectorAll('foreignObject').forEach(fo => {
     const x = parseFloat(fo.getAttribute('x') ?? '0')
     const y = parseFloat(fo.getAttribute('y') ?? '0')
+    const foWidth = parseFloat(fo.getAttribute('width') ?? '200')
     const rawText = (fo.textContent ?? '').trim()
     if (!rawText) { fo.remove(); return }
-    const FONT_SIZE = 12
-    const LINE_HEIGHT = FONT_SIZE * 1.4
-    const PADDING = 6
-    const lines = rawText.split('\n')
+    const maxTextWidth = foWidth - PAD_X * 2
+
+    const paragraphs = rawText.split('\n')
+    const allLines: string[] = []
+    for (const para of paragraphs) {
+      allLines.push(...wrapWords(para || ' ', maxTextWidth))
+    }
+
     const g = document.createElementNS(NS, 'g')
-    lines.forEach((line, i) => {
-      const t = document.createElementNS(NS, 'text')
-      t.setAttribute('x', String(x + PADDING))
-      t.setAttribute('y', String(y + PADDING + FONT_SIZE + i * LINE_HEIGHT))
-      t.setAttribute('font-size', String(FONT_SIZE))
-      t.setAttribute('font-family', 'ui-sans-serif, system-ui, sans-serif')
-      t.setAttribute('fill', 'currentColor')
-      t.textContent = line || ''
-      g.appendChild(t)
+    const textEl = document.createElementNS(NS, 'text')
+    textEl.setAttribute('font-size', String(FONT_SIZE))
+    textEl.setAttribute('font-family', FONT_FAMILY)
+    textEl.setAttribute('fill', 'currentColor')
+    allLines.forEach((line, i) => {
+      const tspan = document.createElementNS(NS, 'tspan')
+      tspan.setAttribute('x', String(x + PAD_X))
+      tspan.setAttribute('y', String(y + PAD_Y + FONT_SIZE + i * LINE_HEIGHT))
+      tspan.textContent = line
+      textEl.appendChild(tspan)
     })
+    g.appendChild(textEl)
     fo.replaceWith(g)
   })
 
   const clonedViewGroup = clonedSvg.querySelector('#view-group') as SVGGElement | null
   if (clonedViewGroup) clonedViewGroup.removeAttribute('transform')
 
-  const styleText = collectStyles()
   const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style')
-  styleEl.textContent = styleText
+  styleEl.textContent = collectStyles()
   clonedSvg.prepend(styleEl)
 
   const svgString = new XMLSerializer().serializeToString(clonedSvg)
-  const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
-  const svgUrl  = URL.createObjectURL(svgBlob)
+  const svgBlob   = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' })
+  const svgUrl    = URL.createObjectURL(svgBlob)
 
-  const DPR = Math.max(window.devicePixelRatio ?? 1, 2)
+  const DPR = 1
   const canvas  = document.createElement('canvas')
   canvas.width  = contentW * DPR
   canvas.height = contentH * DPR
-
   const ctx = canvas.getContext('2d')!
   ctx.scale(DPR, DPR)
 
@@ -180,12 +289,79 @@ export async function exportDiagramToPng(
     img.onerror = reject
     img.src = svgUrl
   })
-
   URL.revokeObjectURL(svgUrl)
 
-  canvas.toBlob(blob => {
-    if (blob) triggerDownload(blob, `${filename}.png`)
-  }, 'image/png')
+  const pngBlob: Blob = await new Promise((resolve, reject) => {
+    canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob failed')), 'image/png')
+  })
+
+  const pngBytes = new Uint8Array(await pngBlob.arrayBuffer())
+  const jsonStr  = JSON.stringify(serializeDiagramV2(diagram))
+  return injectPngiTxt(pngBytes, ARCH_KEYWORD, jsonStr)
+}
+
+/**
+ * Download the diagram as a `.arch.png` (PNG + embedded JSON).
+ */
+export async function exportDiagramToArchPng(
+  _svgEl: SVGSVGElement,
+  _viewGroup: SVGGElement,
+  diagram: Diagram,
+  filename = 'diagram',
+): Promise<void> {
+  const bytes = await buildArchPngBytes(diagram)
+  triggerDownload(new Blob([bytes.buffer as ArrayBuffer], { type: 'image/png' }), `${filename}.arch.png`)
+}
+
+/**
+ * Render a small thumbnail of the current diagram and return it as a PNG data URL.
+ * Returns null if the SVG is not ready or the diagram is empty.
+ */
+export async function buildThumbnailDataUrl(maxW = 320, maxH = 200): Promise<string | null> {
+  const svgEl    = document.querySelector<SVGSVGElement>('#canvas')
+  const viewGroup = document.querySelector<SVGGElement>('#view-group')
+  if (!svgEl || !viewGroup) return null
+
+  const savedTransform = viewGroup.getAttribute('transform') ?? ''
+  viewGroup.setAttribute('transform', '')
+  const bbox = viewGroup.getBBox()
+  viewGroup.setAttribute('transform', savedTransform)
+  if (bbox.width === 0 || bbox.height === 0) return null
+
+  const PADDING = 24
+  const contentW = bbox.width  + PADDING * 2
+  const contentH = bbox.height + PADDING * 2
+  const scale    = Math.min(maxW / contentW, maxH / contentH, 1)
+  const thumbW   = Math.round(contentW * scale)
+  const thumbH   = Math.round(contentH * scale)
+
+  const clonedSvg = svgEl.cloneNode(true) as SVGSVGElement
+  clonedSvg.setAttribute('width',   String(thumbW))
+  clonedSvg.setAttribute('height',  String(thumbH))
+  clonedSvg.setAttribute('viewBox', `${bbox.x - PADDING} ${bbox.y - PADDING} ${contentW} ${contentH}`)
+  clonedSvg.querySelectorAll('.rubber-band, .snap-guides').forEach(el => el.remove())
+  clonedSvg.querySelectorAll('foreignObject').forEach(fo => fo.remove())
+  const clonedViewGroup = clonedSvg.querySelector('#view-group') as SVGGElement | null
+  if (clonedViewGroup) clonedViewGroup.removeAttribute('transform')
+  const styleEl = document.createElementNS('http://www.w3.org/2000/svg', 'style')
+  styleEl.textContent = collectStyles()
+  clonedSvg.prepend(styleEl)
+
+  const svgUrl = URL.createObjectURL(
+    new Blob([new XMLSerializer().serializeToString(clonedSvg)], { type: 'image/svg+xml;charset=utf-8' })
+  )
+  const canvas = document.createElement('canvas')
+  canvas.width  = thumbW
+  canvas.height = thumbH
+  const ctx = canvas.getContext('2d')!
+  await new Promise<void>((resolve, reject) => {
+    const img = new Image()
+    img.onload  = () => { ctx.drawImage(img, 0, 0); resolve() }
+    img.onerror = reject
+    img.src = svgUrl
+  })
+  URL.revokeObjectURL(svgUrl)
+  return canvas.toDataURL('image/png')
 }
 
 /** Collect all CSS rules and inject theme variables for consistent PNG output.
@@ -234,14 +410,25 @@ export async function loadDiagramFromFile(
       const [handle] = await (window as typeof window & {
         showOpenFilePicker: (opts?: unknown) => Promise<FileSystemFileHandle[]>
       }).showOpenFilePicker({
-        types: [{ description: 'Diagram JSON', accept: { 'application/json': ['.json'] } }],
+        types: [
+          { description: 'Diagram files', accept: { 'application/json': ['.json'], 'image/png': ['.png'] } },
+        ],
         multiple: false,
       })
       const file = await handle.getFile()
-      const text = await file.text()
-      const raw = JSON.parse(text)
-      activeFileHandle = handle
-      onLoad(deserializeV2(raw), handle, text)
+      if (file.name.endsWith('.arch.png') || file.name.endsWith('.png')) {
+        const buf  = await file.arrayBuffer()
+        const json = extractPngiTxt(new Uint8Array(buf), ARCH_KEYWORD)
+        if (!json) { alert('This PNG does not contain an embedded diagram.'); return }
+        const raw = JSON.parse(json)
+        // .arch.png files are read-only previews — no autosave handle
+        onLoad(deserializeV2(raw), null, json)
+      } else {
+        const text = await file.text()
+        const raw  = JSON.parse(text)
+        activeFileHandle = handle
+        onLoad(deserializeV2(raw), handle, text)
+      }
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === 'AbortError') return
       if (err instanceof SyntaxError) { alert('Could not read diagram file — invalid JSON.'); return }
@@ -253,21 +440,36 @@ export async function loadDiagramFromFile(
   // Fallback: <input type="file"> — no writable handle
   const input = document.createElement('input')
   input.type = 'file'
-  input.accept = '.json,application/json'
+  input.accept = '.json,application/json,.arch.png,.png,image/png'
   input.addEventListener('change', () => {
     const file = input.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      try {
-        const text = reader.result as string
-        const raw = JSON.parse(text)
-        onLoad(deserializeV2(raw), null, text)
-      } catch {
-        alert('Could not read diagram file — invalid JSON.')
+    if (file.name.endsWith('.arch.png') || file.name.endsWith('.png')) {
+      const reader = new FileReader()
+      reader.onload = () => {
+        try {
+          const buf  = reader.result as ArrayBuffer
+          const json = extractPngiTxt(new Uint8Array(buf), ARCH_KEYWORD)
+          if (!json) { alert('This PNG does not contain an embedded diagram.'); return }
+          onLoad(deserializeV2(JSON.parse(json)), null, json)
+        } catch {
+          alert('Could not read diagram from PNG.')
+        }
       }
+      reader.readAsArrayBuffer(file)
+    } else {
+      const reader = new FileReader()
+      reader.onload = () => {
+        try {
+          const text = reader.result as string
+          const raw = JSON.parse(text)
+          onLoad(deserializeV2(raw), null, text)
+        } catch {
+          alert('Could not read diagram file — invalid JSON.')
+        }
+      }
+      reader.readAsText(file)
     }
-    reader.readAsText(file)
   })
   input.click()
 }

@@ -1,6 +1,6 @@
 import { DiagramStore } from './store/DiagramStore.ts'
 import { loadSavedTheme } from './themes/catppuccin.ts'
-import { loadDiagram, saveDiagram, openAndSaveToFile, closeActiveFile, setActiveFileHandle, getActiveFileName, loadDiagramFromFile, exportDiagramToPng, serializeDiagramV2, deserializeV2 } from './serialization/persistence.ts'
+import { loadDiagram, saveDiagram, openAndSaveToFile, closeActiveFile, setActiveFileHandle, getActiveFileName, loadDiagramFromFile, serializeDiagramV2, deserializeV2 } from './serialization/persistence.ts'
 import { ClassRenderer } from './renderers/ClassRenderer.ts'
 import { PackageRenderer } from './renderers/PackageRenderer.ts'
 import { StorageRenderer } from './renderers/StorageRenderer.ts'
@@ -119,19 +119,16 @@ const fileMenuCallbacks = {
   onSave: () => {
     const d = store.state
     const name = fileMenu.getTitle() || 'diagram'
-    openAndSaveToFile(d, `${name}.json`).then(saved => {
+    openAndSaveToFile(d, `${name}.arch.png`).then(saved => {
       if (saved) fileMenu.setFileIndicator(getActiveFileName())
     }).catch(console.error)
   },
   onSaveAs: () => {
     const d = store.state
     const name = fileMenu.getTitle() || 'diagram'
-    openAndSaveToFile(d, `${name}.json`, /* forceNew */ true).then(saved => {
+    openAndSaveToFile(d, `${name}.arch.png`, /* forceNew */ true).then(saved => {
       if (saved) fileMenu.setFileIndicator(getActiveFileName())
     }).catch(console.error)
-  },
-  onExportPng: () => {
-    exportDiagramToPng(svg, viewGroup, fileMenu.getTitle() || 'diagram').catch(console.error)
   },
   onTitleChange: (title: string) => {
     store.updateDiagramName(title)
@@ -2592,7 +2589,7 @@ window.addEventListener('mouseup', e => {
 })
 
 document.addEventListener('keydown', e => {
-  if ((e.target as HTMLElement).tagName === 'INPUT') return
+  if ((e.target as HTMLElement).closest('input, textarea, [contenteditable]')) return
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
     e.preventDefault(); store.undo(); updateEditMenu(); return
   }
@@ -2765,10 +2762,6 @@ document.addEventListener('keydown', e => {
   if (e.shiftKey && e.key === 'O') {
     e.preventDefault()
     fileMenuCallbacks.onOpen()
-  }
-  if (e.shiftKey && e.key === 'E') {
-    e.preventDefault()
-    fileMenuCallbacks.onExportPng()
   }
 })
 

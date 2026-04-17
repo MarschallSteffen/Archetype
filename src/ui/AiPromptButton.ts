@@ -33,6 +33,7 @@ Omit \`position\` and \`size\` — the tool auto-lays elements out.
 | \`start-state\` | State | no name needed |
 | \`end-state\` | State | no name needed |
 | \`seq-diagram\` | Sequence | give explicit \`position\` + \`size\`; nested \`lifelines\` array (see below) |
+| \`seq-fragment\` | Sequence | \`operator\`: "alt"·"opt"·"loop"·"par"·"ref"; \`condition\`: string label; give explicit \`position\` + \`size\` to overlay a seq-diagram region |
 | \`comment\` | Any | \`text\`: multiline annotation text; optional \`pinnedTo\`: id of another element to attach a dashed line to; omit \`position\` — it will be placed automatically to the right of the pinned element |
 
 ### Sequence diagram lifelines
@@ -81,6 +82,12 @@ All connection fields except \`source\` and \`target\` are optional (defaults: t
 - You can mix multiple diagram types in one file — they stack vertically. Use \`position\` to separate sections (e.g. UML at y=0, TAM at y=700, Use Case at y=1200).
 - Keep element names short and clear.
 - For UML classes, use realistic attribute/method signatures.
+
+## How to load into Archetype
+
+1. Copy the JSON output from your AI assistant.
+2. Save it as a \`.json\` file (e.g. \`my-diagram.json\`).
+3. In Archetype, open **File → Open…** and select the file.
 
 ## Task
 

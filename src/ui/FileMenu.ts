@@ -12,12 +12,11 @@
 import { registerMenu, closeAllMenus } from './menuRegistry.ts'
 
 export interface FileMenuCallbacks {
-  onNew:         () => void
-  onOpen:        () => void
-  onSave:        () => void
-  onSaveAs:      () => void
-  onExportPng:   () => void
-  onTitleChange: (title: string) => void
+  onNew:            () => void
+  onOpen:           () => void
+  onSave:           () => void
+  onSaveAs:         () => void
+  onTitleChange:    (title: string) => void
 }
 
 export class FileMenu {
@@ -52,8 +51,6 @@ export class FileMenu {
       'separator',
       { label: 'Save',          shortcut: '⌘⇧S',  action: callbacks.onSave },
       { label: 'Save As…',      shortcut: '⌘⇧⌥S', action: callbacks.onSaveAs },
-      'separator',
-      { label: 'Export as PNG', shortcut: '⌘⇧E',  action: callbacks.onExportPng },
     ]
 
     for (const item of items) {

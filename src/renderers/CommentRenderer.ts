@@ -3,6 +3,52 @@ import type { DiagramStore } from '../store/DiagramStore.ts'
 import { svgEl } from './svgUtils.ts'
 
 const DOG_EAR = 14
+const FONT_SIZE = 12
+const LINE_HEIGHT = FONT_SIZE * 1.4
+const PAD_X = 8
+const PAD_Y = 6
+const MIN_HEIGHT = 80  // matches commentConfig defaultSize.h
+
+// Shared canvas context for text measurement
+let _measureCtx: CanvasRenderingContext2D | null = null
+function getMeasureCtx(): CanvasRenderingContext2D {
+  if (!_measureCtx) {
+    _measureCtx = document.createElement('canvas').getContext('2d')!
+    _measureCtx.font = `${FONT_SIZE}px ui-sans-serif, system-ui, sans-serif`
+  }
+  return _measureCtx
+}
+
+function wrapWords(text: string, maxWidth: number): string[] {
+  const ctx = getMeasureCtx()
+  const words = text.split(' ')
+  const result: string[] = []
+  let line = ''
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word
+    if (ctx.measureText(candidate).width > maxWidth && line) {
+      result.push(line)
+      line = word
+    } else {
+      line = candidate
+    }
+  }
+  if (line) result.push(line)
+  return result
+}
+
+/** Compute the height needed to display text in a box of given width. */
+export function measureCommentHeight(text: string, boxWidth: number): number {
+  if (!text.trim()) return MIN_HEIGHT
+  const maxTextWidth = boxWidth - PAD_X * 2
+  const paragraphs = text.split('\n')
+  let totalLines = 0
+  for (const para of paragraphs) {
+    totalLines += wrapWords(para || ' ', maxTextWidth).length
+  }
+  const textHeight = PAD_Y + totalLines * LINE_HEIGHT + PAD_Y
+  return Math.max(MIN_HEIGHT, Math.ceil(textHeight))
+}
 
 // Element types grouped by border shape for pin-line calculations
 const PILL_ELEMENT_TYPES  = new Set(['state', 'storage', 'queue'])
@@ -14,6 +60,7 @@ export class CommentRenderer {
   private bg: SVGRectElement
   private dogear: SVGPolygonElement
   private dogearFold: SVGLineElement
+  private dogearClipRect: SVGRectElement
   private fo: SVGForeignObjectElement
   private textDiv: HTMLDivElement
   private pinLine: SVGLineElement
@@ -32,8 +79,18 @@ export class CommentRenderer {
     this.bg = svgEl('rect')
     this.bg.classList.add('comment-bg')
 
+    // clipPath to constrain dog-ear to the rounded rect bounds
+    const clipId = `comment-clip-${comment.id}`
+    const clipPath = svgEl('clipPath') as unknown as SVGClipPathElement
+    clipPath.setAttribute('id', clipId)
+    this.dogearClipRect = svgEl('rect') as SVGRectElement
+    this.dogearClipRect.setAttribute('rx', '6')
+    this.dogearClipRect.setAttribute('ry', '6')
+    clipPath.appendChild(this.dogearClipRect)
+
     this.dogear = svgEl('polygon')
     this.dogear.classList.add('comment-dogear')
+    this.dogear.setAttribute('clip-path', `url(#${clipId})`)
 
     this.dogearFold = svgEl('line')
     this.dogearFold.classList.add('comment-dogear-fold')
@@ -49,7 +106,10 @@ export class CommentRenderer {
     this.fo.appendChild(this.textDiv)
 
     // pin line goes first so it renders below the note body
-    this.el.append(this.pinLine, this.bg, this.dogear, this.dogearFold, this.fo)
+    // clipPath must be in a <defs> inside the element's group
+    const defs = svgEl('defs')
+    defs.appendChild(clipPath)
+    this.el.append(defs, this.pinLine, this.bg, this.dogear, this.dogearFold, this.fo)
 
     this.update(comment)
 
@@ -73,7 +133,16 @@ export class CommentRenderer {
   }
 
   update(comment: Comment) {
-    const { position: { x, y }, size: { w, h } } = comment
+    const { position: { x, y }, size: { w } } = comment
+    // Auto-size height to fit text, never smaller than MIN_HEIGHT
+    const neededH = measureCommentHeight(comment.text, w)
+    const h = neededH
+    if (neededH !== comment.size.h) {
+      // Defer to avoid mutating store during a store event callback
+      requestAnimationFrame(() => {
+        this.store.updateComment(comment.id, { size: { w, h: neededH } })
+      })
+    }
     const d = DOG_EAR
 
     this.el.setAttribute('transform', `translate(${x},${y})`)
@@ -84,6 +153,12 @@ export class CommentRenderer {
     this.bg.setAttribute('height', String(h))
     this.bg.setAttribute('rx', '6')
     this.bg.setAttribute('ry', '6')
+
+    // keep clipPath rect in sync with bg rect
+    this.dogearClipRect.setAttribute('x', '0')
+    this.dogearClipRect.setAttribute('y', '0')
+    this.dogearClipRect.setAttribute('width', String(w))
+    this.dogearClipRect.setAttribute('height', String(h))
 
     // dog-ear triangle at top-right corner
     this.dogear.setAttribute('points', `${w - d},0 ${w},0 ${w},${d}`)

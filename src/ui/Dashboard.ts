@@ -92,33 +92,58 @@ export class Dashboard {
     }
 
     for (const file of files) {
-      const row = document.createElement('button')
-      row.className = 'dashboard-recent-item'
+      const card = document.createElement('button')
+      card.className = 'dashboard-recent-item'
       const ago = formatRelativeTime(file.timestamp)
-      const sub = file.filename ? `<span class="dashboard-recent-filename">${escHtml(file.filename)}</span>` : ''
-      row.innerHTML = `
-        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round">
-          <path d="M2 14V2h8l4 4v8H2z"/><path d="M10 2v4h4"/><path d="M5 10h6M5 12h4"/>
-        </svg>
-        <span class="dashboard-recent-info">
-          <span class="dashboard-recent-name">${escHtml(file.name)}</span>
-          ${sub}
-        </span>
-        <span class="dashboard-recent-time">${ago}</span>
-        <button class="dashboard-recent-remove" title="Remove from recent" data-id="${escHtml(file.id)}">
-          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
-            <line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/>
+      card.innerHTML = `
+        <div class="dashboard-recent-thumb">
+          <svg width="28" height="28" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" opacity="0.3">
+            <path d="M2 14V2h8l4 4v8H2z"/><path d="M10 2v4h4"/><path d="M5 10h6M5 12h4"/>
           </svg>
-        </button>
+        </div>
+        <div class="dashboard-recent-footer">
+          <span class="dashboard-recent-name">${escHtml(file.name)}</span>
+          <span class="dashboard-recent-time">${ago}</span>
+          <button class="dashboard-recent-remove" title="Remove from recent" data-id="${escHtml(file.id)}">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <line x1="1" y1="1" x2="11" y2="11"/><line x1="11" y1="1" x2="1" y2="11"/>
+            </svg>
+          </button>
+        </div>
       `
-      row.querySelector('.dashboard-recent-remove')!.addEventListener('click', e => {
+      card.querySelector('.dashboard-recent-remove')!.addEventListener('click', e => {
         e.stopPropagation()
         removeRecentFile(file.id)
         this.refresh()
       })
-      row.addEventListener('click', () => this.resumeFile(file))
-      this.listEl.appendChild(row)
+      card.addEventListener('click', () => this.resumeFile(file))
+      this.listEl.appendChild(card)
+
+      // Async: load PNG thumbnail from file handle
+      this.loadThumb(file, card.querySelector('.dashboard-recent-thumb')!)
     }
+  }
+
+  private async loadThumb(file: RecentFile, thumbEl: Element) {
+    if (!_handleStore) return
+    try {
+      const handle = await _handleStore.loadHandle(file.id)
+      if (!handle) return
+      const perm = await (handle as any).queryPermission({ mode: 'read' })
+      if (perm !== 'granted') return
+      const blob = await handle.getFile()
+      // Only show if it's an arch.png
+      if (!blob.name.endsWith('.png')) return
+      const url = URL.createObjectURL(blob)
+      const img = document.createElement('img')
+      img.className = 'dashboard-recent-thumb-img'
+      img.src = url
+      img.onload = () => {
+        thumbEl.innerHTML = ''
+        thumbEl.appendChild(img)
+      }
+      img.onerror = () => URL.revokeObjectURL(url)
+    } catch { /* no thumbnail — keep placeholder */ }
   }
 
   private async resumeFile(file: RecentFile) {

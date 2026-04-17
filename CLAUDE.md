@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **All renderers must implement `destroy()`** — at minimum `this.el.remove()`. The `AnyRenderer` interface in `main.ts` requires it.
 - **Connections are always auto-routed** via `bestPortPair` in `routing.ts` — stored ports are updated on every `refreshConnections` call. Never hardcode port sides in connection logic.
 - **`refreshConnections` always passes the fresh `conn` object** from `store.state` directly to `r.updatePoints(...)` as the last argument. Never rely on `this.conn` inside the renderer being up-to-date at call time.
-- **Persistence is JSON** — `saveDiagram` writes the full `Diagram` object as `JSON.stringify`. All persistence lives in `src/serialization/persistence.ts`.
+- **Persistence is JSON** — `saveDiagram` writes the full `Diagram` object as `JSON.stringify`. All persistence lives in `src/serialization/persistence.ts`. **Whenever the save file format changes (new fields, renamed fields, new element types, new connection types), also update the AI system prompt** so AI-assisted diagram generation stays in sync with the actual schema.
 - **Storage connection direction** — source/target order is canonical. `read` and `write` both use `marker-end` only; direction is determined by which element is source vs target. Use the flip button to reverse.
 - **Element kind types are defined once** in `src/types.ts` (`ElementKind`, `SelectableKind`). Import from there — never re-declare locally.
 - **`Point` and `Size` are defined in `src/entities/common.ts`** — import from there, not from `UmlClass.ts`. UmlClass re-exports them for backwards compatibility.

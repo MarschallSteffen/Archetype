@@ -25,8 +25,9 @@ A browser-only multi-diagram modeller built with Vite and vanilla TypeScript. No
 - Snap-to-grid guides
 - Auto-save to localStorage on every change
 - Save / Save As / Open via the File System Access API (where supported)
-- PNG export
+- **`.arch.png` file format** — saves as a regular PNG you can view anywhere, with the full diagram JSON embedded as metadata; one file is both image and editable source
 - Catppuccin themes: Latte, Frappé, Macchiato, Mocha
+- AI prompt helper — one-click copy of a structured prompt to generate diagrams with any LLM
 
 ## Getting Started
 
@@ -74,7 +75,17 @@ npm run lint
 | Copy / Paste | Ctrl/Cmd + C / V |
 | Pan | Hold H or middle-click drag |
 | Zoom | Scroll wheel or pinch |
-| Open / Save | File menu (top-right) |
+| Open / Save | File menu (top-left) — saves as `.arch.png` |
+| AI prompt | Click the sparkle button (toolbar bottom) to copy a prompt, paste into any LLM, then open the returned JSON via File → Open |
+
+### `.arch.png` format
+
+All saves produce a `.arch.png` file — a valid PNG image with the diagram JSON embedded in an `iTXt` metadata chunk (keyword: `archetype-diagram`). Benefits:
+
+- **Portable preview** — open in any image viewer, browser, or share as a screenshot
+- **Single source of truth** — no separate `.json` file needed; the PNG _is_ the save file
+- **Lossless round-trip** — Open the `.arch.png` in Archetype to resume editing with full fidelity
+- **Dashboard thumbnails** — recently opened files show the PNG as a card preview automatically
 
 ### Keyboard shortcuts
 
