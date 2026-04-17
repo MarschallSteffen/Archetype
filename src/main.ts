@@ -1,6 +1,6 @@
 import { DiagramStore } from './store/DiagramStore.ts'
 import { loadSavedTheme } from './themes/catppuccin.ts'
-import { loadDiagram, saveDiagram, openAndSaveToFile, closeActiveFile, setActiveFileHandle, setActiveThumbnailId, getThumbnailDataUrl, getActiveFileName, loadDiagramFromFile, serializeDiagramV2, deserializeV2, onPngSaveError, onPngSaveRecovered, acquireWriteHandle, readDiagramJsonFromHandle } from './serialization/persistence.ts'
+import { loadDiagram, saveDiagram, openAndSaveToFile, closeActiveFile, setActiveFileHandle, setActiveThumbnailId, getThumbnailDataUrl, getActiveFileName, loadDiagramFromFile, serializeDiagramV2, deserializeV2, onPngSaveError, onPngSaveRecovered, acquireWriteHandle, readDiagramJsonFromHandle, exportDiagramToSvg } from './serialization/persistence.ts'
 import { ClassRenderer } from './renderers/ClassRenderer.ts'
 import { PackageRenderer } from './renderers/PackageRenderer.ts'
 import { StorageRenderer } from './renderers/StorageRenderer.ts'
@@ -25,12 +25,22 @@ import { Toolbar, type Tool as ToolKind } from './ui/Toolbar.ts'
 import { FileMenu } from './ui/FileMenu.ts'
 import { EditMenu } from './ui/EditMenu.ts'
 import { ViewMenu } from './ui/ViewMenu.ts'
+import { Minimap } from './ui/Minimap.ts'
 import { AiPromptButton } from './ui/AiPromptButton.ts'
 import { saveHandle, loadHandle } from './serialization/fileHandleStore.ts'
 import { Dashboard, addRecentFile, getRecentFiles, injectPersistence, injectHandleStore, injectThumbnailCache, injectReadDiagramJson, injectAcquireWriteHandle } from './ui/Dashboard.ts'
 import { showConnectionPopover } from './ui/ConnectionPopover.ts'
 import { showMsgPopover } from './ui/MessagePopover.ts'
 import { showElementPropertiesPanel, hideElementPropertiesPanel } from './ui/ElementPropertiesPanel.ts'
+import {
+  showBulkElementPanel, hideBulkElementPanel,
+  showBulkConnectionPanel, hideBulkConnectionPanel,
+  hideAllBulkPanels,
+  type BulkConnectionItem,
+} from './ui/BulkPropertiesPanel.ts'
+import { AlignmentToolbar } from './ui/AlignmentToolbar.ts'
+import { createSearchPanel } from './ui/SearchPanel.ts'
+import { toggleHelpModal } from './ui/HelpModal.ts'
 import { createUmlClass } from './entities/UmlClass.ts'
 import { createUmlPackage } from './entities/Package.ts'
 import { createStorage } from './entities/Storage.ts'
@@ -148,6 +158,9 @@ const fileMenuCallbacks = {
       }
     }).catch(console.error)
   },
+  onExportSvg: () => {
+    exportDiagramToSvg(fileMenu.getTitle() || 'diagram')
+  },
   onTitleChange: (title: string) => {
     store.updateDiagramName(title)
     saveDiagram(store.state)
@@ -210,6 +223,7 @@ selection.onChange(() => updateEditMenu())
 // ─── View menu + show-comments toggle ─────────────────────────────────────────
 
 let showComments = JSON.parse(localStorage.getItem('archetype:show-comments') ?? 'true') as boolean
+let showMinimap  = JSON.parse(localStorage.getItem('archetype:show-minimap')  ?? 'true') as boolean
 
 const viewMenu = new ViewMenu(viewMenuAnchor, {
   onToggleComments: (show: boolean) => {
@@ -217,7 +231,11 @@ const viewMenu = new ViewMenu(viewMenuAnchor, {
     localStorage.setItem('archetype:show-comments', JSON.stringify(show))
     commentLayer.style.display = show ? '' : 'none'
   },
-}, showComments)
+  onToggleMinimap: (show: boolean) => {
+    showMinimap = show
+    minimap.setVisible(show)
+  },
+}, showComments, showMinimap)
 
 function ensureCommentsVisible() {
   if (!showComments) {
@@ -427,6 +445,8 @@ function initElementDescriptors() {
   ]
 }
 initElementDescriptors()
+
+const searchPanel = createSearchPanel(store, selection, () => svg, applyViewport, ELEMENTS)
 
 /** Get all elements as {kind, id, x, y, w, h} for rubber-band / hit-testing */
 function elementShape(kind: ElementKind): string {
@@ -1293,15 +1313,119 @@ function getRenderedSizeFor(id: string, found: { el: AnyElement; type: string })
 
 // ─── Properties panel helper ──────────────────────────────────────────────────
 
+/** Update helper keyed by element kind, used by both single and bulk selection panels. */
+type PatchFn = (patch: { multiInstance?: boolean; flowReversed?: boolean; accentColor?: string | undefined }) => void
+const ELEMENT_UPDATE_FNS: Partial<Record<ElementKind, (id: string) => PatchFn>> = {
+  'class':   id => p => store.updateClass(id, p),
+  'storage': id => p => store.updateStorage(id, p),
+  'actor':   id => p => store.updateActor(id, p),
+  'queue':   id => p => store.updateQueue(id, p),
+}
+
 function showPropertiesForSelection() {
   const items = selection.items
+
+  // ── Multi-selection: 2+ items ────────────────────────────────────────────
+  if (items.length >= 2) {
+    const allConnections = items.every(it => it.kind === 'connection')
+    const noConnections  = items.every(it => it.kind !== 'connection')
+
+    if (allConnections) {
+      hideElementPropertiesPanel()
+      hideBulkElementPanel()
+
+      const connItems: BulkConnectionItem[] = []
+      for (const item of items) {
+        const conn = store.state.connections.find(c => c.id === item.id)
+        if (!conn) continue
+        const srcEl = store.findAnyElement(conn.source.elementId)
+        const tgtEl = store.findAnyElement(conn.target.elementId)
+        const srcConfig = getElementConfig(srcEl?.elementType ?? '')
+        const tgtConfig = getElementConfig(tgtEl?.elementType ?? '')
+        connItems.push({
+          id: conn.id,
+          type: conn.type,
+          sourceMultiplicity: conn.sourceMultiplicity,
+          targetMultiplicity: conn.targetMultiplicity,
+          srcConfig,
+          tgtConfig,
+        })
+      }
+
+      if (connItems.length < 2) { hideBulkConnectionPanel(); return }
+
+      const svgRect = svg.getBoundingClientRect()
+      const screenX = svgRect.right - 20
+      const screenY = svgRect.top + 80
+
+      showBulkConnectionPanel(
+        screenX, screenY, connItems,
+        (type) => {
+          store.beginUndoGroup()
+          for (const c of connItems) store.updateConnection(c.id, { type })
+          store.endUndoGroup()
+        },
+        (srcMult, tgtMult) => {
+          store.beginUndoGroup()
+          for (const c of connItems) store.updateConnection(c.id, { sourceMultiplicity: srcMult, targetMultiplicity: tgtMult })
+          store.endUndoGroup()
+        },
+      )
+      return
+    }
+
+    if (noConnections) {
+      hideElementPropertiesPanel()
+      hideBulkConnectionPanel()
+
+      const elemItems: Array<{ id: string; kind: string; multiInstance: boolean; supportsProperties: boolean }> = []
+      for (const item of items) {
+        const found = store.findAnyElement(item.id) as (ReturnType<typeof store.findAnyElement> & { multiInstance?: boolean }) | undefined
+        if (!found) continue
+        const config = getElementConfig(found.elementType ?? item.kind)
+        elemItems.push({
+          id: item.id,
+          kind: item.kind,
+          multiInstance: (found as { multiInstance?: boolean }).multiInstance ?? false,
+          supportsProperties: config?.supportsProperties ?? false,
+        })
+      }
+
+      if (elemItems.length < 2) { hideBulkElementPanel(); return }
+
+      const allSupport = elemItems.every(it => it.supportsProperties)
+      if (!allSupport) { hideBulkElementPanel(); return }
+
+      const svgRect = svg.getBoundingClientRect()
+      const screenX = svgRect.right - 20
+      const screenY = svgRect.top + 80
+
+      showBulkElementPanel(
+        screenX, screenY, elemItems,
+        (val) => {
+          store.beginUndoGroup()
+          for (const it of elemItems) {
+            ELEMENT_UPDATE_FNS[it.kind as ElementKind]?.(it.id)?.({ multiInstance: val })
+          }
+          store.endUndoGroup()
+        },
+      )
+      return
+    }
+
+    // Mixed selection (elements + connections): hide all panels
+    hideElementPropertiesPanel()
+    hideAllBulkPanels()
+    return
+  }
+
+  // ── Single selection ─────────────────────────────────────────────────────
+  hideAllBulkPanels()
   if (items.length !== 1) { hideElementPropertiesPanel(); return }
 
   const item = items[0]
 
-  type PatchFn = (patch: { multiInstance?: boolean; flowReversed?: boolean }) => void
-
-  const found = store.findAnyElement(item.id) as (ReturnType<typeof store.findAnyElement> & { multiInstance?: boolean; flowReversed?: boolean }) | undefined
+  const found = store.findAnyElement(item.id) as (ReturnType<typeof store.findAnyElement> & { multiInstance?: boolean; flowReversed?: boolean; accentColor?: string }) | undefined
   if (!found) { hideElementPropertiesPanel(); return }
 
   // Use elementType (e.g. 'agent', 'human-agent') not kind (e.g. 'actor') because
@@ -1314,14 +1438,9 @@ function showPropertiesForSelection() {
   const elSize = found.size
   const multiInstance = found.multiInstance ?? false
   const flowReversed = found.flowReversed
+  const accentColor = found.accentColor
 
-  const UPDATE_FNS: Partial<Record<ElementKind, PatchFn>> = {
-    'class':       p => store.updateClass(item.id, p),
-    'storage':     p => store.updateStorage(item.id, p),
-    'actor':       p => store.updateActor(item.id, p),
-    'queue':       p => store.updateQueue(item.id, p),
-  }
-  const updateFn = UPDATE_FNS[item.kind as ElementKind]
+  const updateFn = ELEMENT_UPDATE_FNS[item.kind as ElementKind]?.(item.id)
   if (!updateFn) { hideElementPropertiesPanel(); return }
 
   const d = store.state
@@ -1335,9 +1454,11 @@ function showPropertiesForSelection() {
     screenX,
     screenY,
     multiInstance,
-    (val) => updateFn!({ multiInstance: val }),
+    (val) => updateFn({ multiInstance: val }),
     isQueue ? (flowReversed ?? false) : undefined,
-    isQueue ? (reversed) => updateFn!({ flowReversed: reversed }) : undefined,
+    isQueue ? (reversed) => updateFn({ flowReversed: reversed }) : undefined,
+    accentColor,
+    (color) => updateFn({ accentColor: color }),
   )
 }
 
@@ -2616,7 +2737,14 @@ window.addEventListener('mouseup', e => {
 })
 
 document.addEventListener('keydown', e => {
+  // Ctrl+F / Cmd+F — intercept before the input-focus guard so it works everywhere
+  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+    e.preventDefault()
+    searchPanel.show()
+    return
+  }
   if ((e.target as HTMLElement).closest('input, textarea, [contenteditable]')) return
+  if (e.key === '?') { e.preventDefault(); toggleHelpModal(); return }
   if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
     e.preventDefault(); store.undo(); updateEditMenu(); return
   }
@@ -2933,4 +3061,15 @@ function rebuildAll() {
   applyViewport()
 }
 
+// ─── Minimap ──────────────────────────────────────────────────────────────────
+
+const minimap = new Minimap(store, () => svg, applyViewport)
+
 rebuildAll()
+
+// ─── Alignment toolbar ────────────────────────────────────────────────────────
+
+const alignmentToolbar = new AlignmentToolbar(store, selection, { refreshConnections })
+selection.onChange(items => {
+  alignmentToolbar.update(items.filter(i => i.kind !== 'connection'))
+})
