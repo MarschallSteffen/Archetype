@@ -1,0 +1,717 @@
+{
+  "version": 2,
+  "name": "E-Commerce Microservices",
+  "elements": [
+    {
+      "id": "api-gw",
+      "name": "API Gateway",
+      "accentColor": "--ctp-blue",
+      "position": {
+        "x": 400,
+        "y": 80
+      },
+      "size": {
+        "w": 160,
+        "h": 60
+      },
+      "type": "agent"
+    },
+    {
+      "id": "customer",
+      "name": "Customer",
+      "position": {
+        "x": 80,
+        "y": 80
+      },
+      "size": {
+        "w": 160,
+        "h": 60
+      },
+      "type": "human-agent"
+    },
+    {
+      "id": "order-svc",
+      "name": "Order Service",
+      "accentColor": "--ctp-green",
+      "position": {
+        "x": 200,
+        "y": 240
+      },
+      "size": {
+        "w": 160,
+        "h": 60
+      },
+      "type": "agent"
+    },
+    {
+      "id": "payment-svc",
+      "name": "Payment Service",
+      "accentColor": "--ctp-green",
+      "position": {
+        "x": 400,
+        "y": 240
+      },
+      "size": {
+        "w": 160,
+        "h": 60
+      },
+      "type": "agent"
+    },
+    {
+      "id": "inventory-svc",
+      "name": "Inventory Service",
+      "position": {
+        "x": 600,
+        "y": 240
+      },
+      "size": {
+        "w": 160,
+        "h": 60
+      },
+      "type": "agent"
+    },
+    {
+      "id": "event-bus",
+      "name": "Event Bus",
+      "accentColor": "--ctp-peach",
+      "position": {
+        "x": 400,
+        "y": 400
+      },
+      "size": {
+        "w": 200,
+        "h": 50
+      },
+      "type": "queue"
+    },
+    {
+      "id": "order-db",
+      "name": "Orders DB",
+      "position": {
+        "x": 200,
+        "y": 560
+      },
+      "size": {
+        "w": 160,
+        "h": 60
+      },
+      "type": "storage"
+    },
+    {
+      "id": "inventory-db",
+      "name": "Inventory DB",
+      "position": {
+        "x": 600,
+        "y": 560
+      },
+      "size": {
+        "w": 160,
+        "h": 60
+      },
+      "type": "storage"
+    },
+    {
+      "id": "cls-order",
+      "name": "Order",
+      "stereotype": "class",
+      "accentColor": "--ctp-mauve",
+      "attributes": [
+        "+ id: String",
+        "+ customerId: String",
+        "+ status: OrderStatus",
+        "+ totalAmount: Decimal"
+      ],
+      "methods": [
+        "+ place(): void",
+        "+ cancel(): boolean",
+        "+ calculateTotal(): Decimal"
+      ],
+      "position": {
+        "x": 80,
+        "y": 780
+      },
+      "size": {
+        "w": 220,
+        "h": 160
+      },
+      "type": "uml-class"
+    },
+    {
+      "id": "cls-product",
+      "name": "Product",
+      "stereotype": "class",
+      "attributes": [
+        "+ id: String",
+        "+ name: String",
+        "+ price: Decimal",
+        "+ stock: int"
+      ],
+      "methods": [
+        "+ reserve(qty: int): boolean",
+        "+ release(qty: int): void"
+      ],
+      "position": {
+        "x": 360,
+        "y": 780
+      },
+      "size": {
+        "w": 220,
+        "h": 140
+      },
+      "type": "uml-class"
+    },
+    {
+      "id": "cls-customer",
+      "name": "Customer",
+      "stereotype": "class",
+      "attributes": [
+        "+ id: String",
+        "+ email: String",
+        "+ name: String"
+      ],
+      "methods": [
+        "+ getOrders(): Order[]"
+      ],
+      "position": {
+        "x": 640,
+        "y": 780
+      },
+      "size": {
+        "w": 200,
+        "h": 120
+      },
+      "type": "uml-class"
+    },
+    {
+      "id": "cls-order-status",
+      "name": "OrderStatus",
+      "stereotype": "enum",
+      "attributes": [
+        "PENDING",
+        "CONFIRMED",
+        "SHIPPED",
+        "DELIVERED",
+        "CANCELLED"
+      ],
+      "methods": [],
+      "position": {
+        "x": 80,
+        "y": 1000
+      },
+      "size": {
+        "w": 180,
+        "h": 140
+      },
+      "type": "uml-class"
+    },
+    {
+      "id": "sys-ecommerce",
+      "name": "E-Commerce Platform",
+      "position": {
+        "x": 200,
+        "y": 1240
+      },
+      "size": {
+        "w": 560,
+        "h": 320
+      },
+      "type": "uc-system"
+    },
+    {
+      "id": "actor-customer",
+      "name": "Customer",
+      "position": {
+        "x": 80,
+        "y": 1320
+      },
+      "size": {
+        "w": 80,
+        "h": 100
+      },
+      "type": "uc-actor"
+    },
+    {
+      "id": "actor-admin",
+      "name": "Admin",
+      "position": {
+        "x": 840,
+        "y": 1320
+      },
+      "size": {
+        "w": 80,
+        "h": 100
+      },
+      "type": "uc-actor"
+    },
+    {
+      "id": "uc-browse",
+      "name": "Browse Products",
+      "position": {
+        "x": 280,
+        "y": 1280
+      },
+      "size": {
+        "w": 160,
+        "h": 50
+      },
+      "type": "use-case"
+    },
+    {
+      "id": "uc-place-order",
+      "name": "Place Order",
+      "accentColor": "--ctp-green",
+      "position": {
+        "x": 280,
+        "y": 1360
+      },
+      "size": {
+        "w": 160,
+        "h": 50
+      },
+      "type": "use-case"
+    },
+    {
+      "id": "uc-pay",
+      "name": "Process Payment",
+      "position": {
+        "x": 480,
+        "y": 1360
+      },
+      "size": {
+        "w": 160,
+        "h": 50
+      },
+      "type": "use-case"
+    },
+    {
+      "id": "uc-manage",
+      "name": "Manage Inventory",
+      "position": {
+        "x": 480,
+        "y": 1460
+      },
+      "size": {
+        "w": 160,
+        "h": 50
+      },
+      "type": "use-case"
+    },
+    {
+      "id": "s-pending",
+      "name": "Pending",
+      "position": {
+        "x": 80,
+        "y": 1680
+      },
+      "size": {
+        "w": 140,
+        "h": 50
+      },
+      "type": "state"
+    },
+    {
+      "id": "s-confirmed",
+      "name": "Confirmed",
+      "accentColor": "--ctp-teal",
+      "position": {
+        "x": 280,
+        "y": 1680
+      },
+      "size": {
+        "w": 140,
+        "h": 50
+      },
+      "type": "state"
+    },
+    {
+      "id": "s-shipped",
+      "name": "Shipped",
+      "accentColor": "--ctp-blue",
+      "position": {
+        "x": 480,
+        "y": 1680
+      },
+      "size": {
+        "w": 140,
+        "h": 50
+      },
+      "type": "state"
+    },
+    {
+      "id": "s-delivered",
+      "name": "Delivered",
+      "accentColor": "--ctp-green",
+      "position": {
+        "x": 680,
+        "y": 1680
+      },
+      "size": {
+        "w": 140,
+        "h": 50
+      },
+      "type": "state"
+    },
+    {
+      "id": "s-cancelled",
+      "name": "Cancelled",
+      "accentColor": "--ctp-red",
+      "position": {
+        "x": 280,
+        "y": 1800
+      },
+      "size": {
+        "w": 140,
+        "h": 50
+      },
+      "type": "state"
+    },
+    {
+      "id": "ss-order",
+      "position": {
+        "x": 80,
+        "y": 1600
+      },
+      "size": {
+        "w": 32,
+        "h": 32
+      },
+      "type": "start-state"
+    },
+    {
+      "id": "es-order",
+      "position": {
+        "x": 680,
+        "y": 1800
+      },
+      "size": {
+        "w": 32,
+        "h": 32
+      },
+      "type": "end-state"
+    },
+    {
+      "id": "seq-checkout",
+      "name": "Checkout Flow",
+      "position": {
+        "x": 80,
+        "y": 1960
+      },
+      "size": {
+        "w": 860,
+        "h": 400
+      },
+      "lifelines": [
+        {
+          "id": "ll-browser",
+          "name": "Browser",
+          "position": {
+            "x": 20,
+            "y": 0
+          },
+          "size": {
+            "w": 140,
+            "h": 40
+          },
+          "messages": [
+            {
+              "id": "m1",
+              "label": "POST /orders",
+              "targetLifelineId": "ll-api",
+              "kind": "sync",
+              "slotIndex": 0
+            },
+            {
+              "id": "m7",
+              "label": "201 Created",
+              "targetLifelineId": "ll-browser",
+              "kind": "return",
+              "slotIndex": 6
+            }
+          ],
+          "type": "seq-lifeline"
+        },
+        {
+          "id": "ll-api",
+          "name": "API Gateway",
+          "accentColor": "--ctp-blue",
+          "position": {
+            "x": 180,
+            "y": 0
+          },
+          "size": {
+            "w": 140,
+            "h": 40
+          },
+          "messages": [
+            {
+              "id": "m2",
+              "label": "createOrder()",
+              "targetLifelineId": "ll-order",
+              "kind": "sync",
+              "slotIndex": 1
+            }
+          ],
+          "type": "seq-lifeline"
+        },
+        {
+          "id": "ll-order",
+          "name": "Order Service",
+          "accentColor": "--ctp-green",
+          "position": {
+            "x": 340,
+            "y": 0
+          },
+          "size": {
+            "w": 140,
+            "h": 40
+          },
+          "messages": [
+            {
+              "id": "m3",
+              "label": "reserve(items)",
+              "targetLifelineId": "ll-inventory",
+              "kind": "sync",
+              "slotIndex": 2
+            },
+            {
+              "id": "m4",
+              "label": "ok",
+              "targetLifelineId": "ll-order",
+              "kind": "return",
+              "slotIndex": 3
+            },
+            {
+              "id": "m5",
+              "label": "charge(amount)",
+              "targetLifelineId": "ll-payment",
+              "kind": "async",
+              "slotIndex": 4
+            },
+            {
+              "id": "m6",
+              "label": "publish(OrderPlaced)",
+              "targetLifelineId": "ll-eventbus",
+              "kind": "async",
+              "slotIndex": 5
+            }
+          ],
+          "type": "seq-lifeline"
+        },
+        {
+          "id": "ll-inventory",
+          "name": "Inventory Svc",
+          "position": {
+            "x": 500,
+            "y": 0
+          },
+          "size": {
+            "w": 140,
+            "h": 40
+          },
+          "messages": [],
+          "type": "seq-lifeline"
+        },
+        {
+          "id": "ll-payment",
+          "name": "Payment Svc",
+          "position": {
+            "x": 660,
+            "y": 0
+          },
+          "size": {
+            "w": 140,
+            "h": 40
+          },
+          "messages": [],
+          "type": "seq-lifeline"
+        },
+        {
+          "id": "ll-eventbus",
+          "name": "Event Bus",
+          "accentColor": "--ctp-peach",
+          "position": {
+            "x": 820,
+            "y": 0
+          },
+          "size": {
+            "w": 140,
+            "h": 40
+          },
+          "messages": [],
+          "type": "seq-lifeline"
+        }
+      ],
+      "type": "seq-diagram"
+    },
+    {
+      "id": "cmt-arch",
+      "text": "Microservices communicate\nasynchronously via the event bus.\nSynchronous calls only for\nreal-time user responses.",
+      "pinnedTo": "event-bus",
+      "position": {
+        "x": 660,
+        "y": 400
+      },
+      "size": {
+        "w": 200,
+        "h": 80
+      },
+      "type": "comment"
+    }
+  ],
+  "connections": [
+    {
+      "id": "c1",
+      "source": "customer",
+      "target": "api-gw",
+      "type": "request",
+      "label": "HTTP"
+    },
+    {
+      "id": "c2",
+      "source": "api-gw",
+      "target": "order-svc",
+      "type": "request"
+    },
+    {
+      "id": "c3",
+      "source": "api-gw",
+      "target": "payment-svc",
+      "type": "request"
+    },
+    {
+      "id": "c4",
+      "source": "api-gw",
+      "target": "inventory-svc",
+      "type": "request"
+    },
+    {
+      "id": "c5",
+      "source": "order-svc",
+      "target": "event-bus",
+      "type": "write"
+    },
+    {
+      "id": "c6",
+      "source": "payment-svc",
+      "target": "event-bus",
+      "type": "read-write"
+    },
+    {
+      "id": "c7",
+      "source": "inventory-svc",
+      "target": "event-bus",
+      "type": "read"
+    },
+    {
+      "id": "c8",
+      "source": "order-svc",
+      "target": "order-db",
+      "type": "read-write"
+    },
+    {
+      "id": "c9",
+      "source": "inventory-svc",
+      "target": "inventory-db",
+      "type": "read-write"
+    },
+    {
+      "id": "c10",
+      "source": "cls-customer",
+      "target": "cls-order",
+      "type": "association",
+      "sourceMultiplicity": "1",
+      "targetMultiplicity": "*"
+    },
+    {
+      "id": "c11",
+      "source": "cls-order",
+      "target": "cls-product",
+      "type": "aggregation",
+      "sourceMultiplicity": "1",
+      "targetMultiplicity": "*"
+    },
+    {
+      "id": "c12",
+      "source": "cls-order",
+      "target": "cls-order-status",
+      "type": "dependency"
+    },
+    {
+      "id": "c13",
+      "source": "actor-customer",
+      "target": "uc-browse",
+      "type": "uc-association"
+    },
+    {
+      "id": "c14",
+      "source": "actor-customer",
+      "target": "uc-place-order",
+      "type": "uc-association"
+    },
+    {
+      "id": "c15",
+      "source": "uc-place-order",
+      "target": "uc-pay",
+      "type": "uc-include"
+    },
+    {
+      "id": "c16",
+      "source": "actor-admin",
+      "target": "uc-manage",
+      "type": "uc-association"
+    },
+    {
+      "id": "c17",
+      "source": "ss-order",
+      "target": "s-pending",
+      "type": "transition"
+    },
+    {
+      "id": "c18",
+      "source": "s-pending",
+      "target": "s-confirmed",
+      "type": "transition",
+      "label": "payment ok"
+    },
+    {
+      "id": "c19",
+      "source": "s-confirmed",
+      "target": "s-shipped",
+      "type": "transition",
+      "label": "dispatched"
+    },
+    {
+      "id": "c20",
+      "source": "s-shipped",
+      "target": "s-delivered",
+      "type": "transition",
+      "label": "received"
+    },
+    {
+      "id": "c21",
+      "source": "s-pending",
+      "target": "s-cancelled",
+      "type": "transition",
+      "label": "payment failed"
+    },
+    {
+      "id": "c22",
+      "source": "s-confirmed",
+      "target": "s-cancelled",
+      "type": "transition",
+      "label": "user cancelled"
+    },
+    {
+      "id": "c23",
+      "source": "s-delivered",
+      "target": "es-order",
+      "type": "transition"
+    },
+    {
+      "id": "c24",
+      "source": "s-cancelled",
+      "target": "es-order",
+      "type": "transition"
+    }
+  ]
+}

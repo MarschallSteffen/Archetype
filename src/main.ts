@@ -13,12 +13,13 @@ import { EndStateRenderer } from './renderers/EndStateRenderer.ts'
 import { SequenceDiagramRenderer } from './renderers/SequenceDiagramRenderer.ts'
 import { CombinedFragmentRenderer } from './renderers/CombinedFragmentRenderer.ts'
 import { CommentRenderer } from './renderers/CommentRenderer.ts'
-import { ConnectionRenderer, injectMarkerDefs, getConnStereotype } from './renderers/ConnectionRenderer.ts'
+import { ConnectionRenderer, injectMarkerDefs } from './renderers/ConnectionRenderer.ts'
 import { DragController } from './interaction/DragController.ts'
 import { ResizeController } from './interaction/ResizeController.ts'
 import { ConnectionController } from './interaction/ConnectionController.ts'
 import { SelectionManager } from './interaction/SelectionManager.ts'
 import { InlineEditor } from './interaction/InlineEditor.ts'
+import { ViewportController } from './interaction/ViewportController.ts'
 import { Toolbar, type Tool as ToolKind } from './ui/Toolbar.ts'
 import { SequenceDiagramController } from './ui/SequenceDiagramController.ts'
 import { FileMenu } from './ui/FileMenu.ts'
@@ -30,13 +31,8 @@ import { saveHandle, loadHandle } from './serialization/fileHandleStore.ts'
 import { Dashboard, addRecentFile, getRecentFiles, injectPersistence, injectHandleStore, injectThumbnailCache, injectReadDiagramJson, injectAcquireWriteHandle } from './ui/Dashboard.ts'
 import { showConnectionPopover } from './ui/ConnectionPopover.ts'
 import { hideMsgPopover } from './ui/MessagePopover.ts'
-import { showElementPropertiesPanel, hideElementPropertiesPanel } from './ui/ElementPropertiesPanel.ts'
-import {
-  showBulkElementPanel, hideBulkElementPanel,
-  showBulkConnectionPanel, hideBulkConnectionPanel,
-  hideAllBulkPanels,
-  type BulkConnectionItem,
-} from './ui/BulkPropertiesPanel.ts'
+import { hideElementPropertiesPanel } from './ui/ElementPropertiesPanel.ts'
+import { PropertiesOrchestrator, type PatchFn } from './ui/PropertiesOrchestrator.ts'
 import { AlignmentToolbar } from './ui/AlignmentToolbar.ts'
 import { createSearchPanel } from './ui/SearchPanel.ts'
 import { toggleHelpModal } from './ui/HelpModal.ts'
@@ -69,14 +65,14 @@ import type { StartState } from './entities/StartState.ts'
 import type { EndState } from './entities/EndState.ts'
 import type { CombinedFragment } from './entities/CombinedFragment.ts'
 import type { Connection } from './entities/Connection.ts'
-import { absolutePortPosition } from './renderers/ports.ts'
 import { getElementConfig } from './config/registry.ts'
 import type { ElementKind } from './types.ts'
-import { bestPortPair } from './renderers/routing.ts'
-import type { PortSide } from './renderers/routing.ts'
 import type { ElbowMode } from './entities/Connection.ts'
-import { deconflict, type LabelBox } from './renderers/LabelDeconflictLayer.ts'
-import { estimateTextWidth } from './renderers/svgUtils.ts'
+import { elementShape, shapedBorderDist } from './geometry/shapeGeometry.ts'
+import { getAllElementRects as _getAllElementRects, getContainedElements as _getContainedElements, type LayoutElementDesc } from './geometry/elementLayout.ts'
+import { Clipboard } from './interaction/Clipboard.ts'
+import { RubberBandSelector } from './interaction/RubberBandSelector.ts'
+import { ConnectionRefresher } from './renderers/ConnectionRefresher.ts'
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
@@ -93,6 +89,7 @@ injectMarkerDefs(svg)
 const diagram = loadDiagram()
 const store = new DiagramStore(diagram ?? undefined)
 const selection = new SelectionManager()
+let clipboardManager = null as unknown as Clipboard
 const toolbar = new Toolbar(document.getElementById('toolbar')!)
 const inlineEditor = new InlineEditor()
 
@@ -211,7 +208,7 @@ const editMenu = new EditMenu(editMenuAnchor, {
 
 function updateEditMenu() {
   editMenu.setHistoryState(store.canUndo, store.canRedo)
-  editMenu.setClipboardState(selection.items.length > 0, clipboard.length > 0)
+  editMenu.setClipboardState(selection.items.length > 0, clipboardManager.hasContent)
 }
 
 store.on(ev => { if (ev.type === 'history:change') updateEditMenu() })
@@ -351,12 +348,6 @@ viewGroup.append(pkgLayer, storageLayer, actorLayer, queueLayer, ucLayer, stateL
 // Apply initial show-comments state (set before layers were declared)
 commentLayer.style.display = showComments ? '' : 'none'
 
-// Rubber-band selection rect — lives inside viewGroup so coords are in diagram space
-const rubberBandRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect')
-rubberBandRect.classList.add('rubber-band')
-rubberBandRect.style.display = 'none'
-viewGroup.appendChild(rubberBandRect)
-
 // Snap guide lines — rendered on top of everything else in diagram space
 const snapGuideGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g')
 snapGuideGroup.classList.add('snap-guides')
@@ -441,97 +432,26 @@ function initElementDescriptors() {
 }
 initElementDescriptors()
 
+clipboardManager = new Clipboard({
+  store, selection,
+  elements: ELEMENTS,
+  onAfterCopy: updateEditMenu,
+})
+function doCopy() { clipboardManager.copy() }
+function doPaste() { clipboardManager.paste() }
+
 const searchPanel = createSearchPanel(store, selection, () => svg, applyViewport, ELEMENTS)
 
 /** Get all elements as {kind, id, x, y, w, h} for rubber-band / hit-testing */
-function elementShape(kind: ElementKind): string {
-  return getElementConfig(kind)?.shape ?? 'rect'
-}
-
-// ─── Shape-aware border point helpers (mirrors CommentRenderer) ───────────────
-
-function borderPointRect(rx: number, ry: number, rw: number, rh: number, px: number, py: number): { x: number; y: number } {
-  const cx = rx + rw / 2, cy = ry + rh / 2
-  const dx = px - cx, dy = py - cy
-  if (dx === 0 && dy === 0) return { x: cx, y: ry }
-  const scaleX = rw / 2 / Math.abs(dx || 1e-9)
-  const scaleY = rh / 2 / Math.abs(dy || 1e-9)
-  return { x: cx + dx * Math.min(scaleX, scaleY), y: cy + dy * Math.min(scaleX, scaleY) }
-}
-
-function borderPointPill(rx: number, ry: number, rw: number, rh: number, px: number, py: number): { x: number; y: number } {
-  const r = rh / 2
-  const cy = ry + r
-  const capCX = Math.max(rx + r, Math.min(px, rx + rw - r))
-  const dx = px - capCX, dy = py - cy
-  const len = Math.hypot(dx, dy)
-  if (len === 0) return { x: capCX, y: ry }
-  return { x: capCX + (dx / len) * r, y: cy + (dy / len) * r }
-}
-
-function borderPointEllipse(rx: number, ry: number, rw: number, rh: number, px: number, py: number): { x: number; y: number } {
-  const cx = rx + rw / 2, cy = ry + rh / 2
-  const dx = px - cx, dy = py - cy
-  if (dx === 0 && dy === 0) return { x: cx, y: ry }
-  const len = Math.hypot(dx / (rw / 2), dy / (rh / 2))
-  return { x: cx + dx / len, y: cy + dy / len }
-}
-
-function borderPointCircle(rx: number, ry: number, rw: number, rh: number, px: number, py: number): { x: number; y: number } {
-  const cx = rx + rw / 2, cy = ry + rh / 2
-  const r = Math.min(rw, rh) / 2
-  const dx = px - cx, dy = py - cy
-  const len = Math.hypot(dx, dy)
-  if (len === 0) return { x: cx, y: cy - r }
-  return { x: cx + (dx / len) * r, y: cy + (dy / len) * r }
-}
-
-function borderPointForShape(shape: string, rx: number, ry: number, rw: number, rh: number, px: number, py: number): { x: number; y: number } {
-  if (shape === 'pill')    return borderPointPill(rx, ry, rw, rh, px, py)
-  if (shape === 'ellipse') return borderPointEllipse(rx, ry, rw, rh, px, py)
-  if (shape === 'circle')  return borderPointCircle(rx, ry, rw, rh, px, py)
-  return borderPointRect(rx, ry, rw, rh, px, py)
-}
-
-/**
- * True border-to-border distance between annotation rect and a shaped element.
- * Finds nearest point on each shape's border toward the other's center, then
- * measures distance between those two surface points (negative = overlapping).
- */
-function shapedBorderDist(
-  annX: number, annY: number, annW: number, annH: number,
-  elX: number,  elY: number,  elW: number,  elH: number, shape: string,
-): number {
-  const annCX = annX + annW / 2, annCY = annY + annH / 2
-  const elCX  = elX  + elW  / 2, elCY  = elY  + elH  / 2
-  // Nearest point on annotation rect border toward element center
-  const p1 = borderPointRect(annX, annY, annW, annH, elCX, elCY)
-  // Nearest point on element's shaped border toward annotation center
-  const p2 = borderPointForShape(shape, elX, elY, elW, elH, annCX, annCY)
-  // Signed distance: negative means the two borders overlap / annotation is inside
-  const dx = p2.x - p1.x, dy = p2.y - p1.y
-  const dist = Math.hypot(dx, dy)
-  // Determine sign: positive if borders have a gap, negative if annotation center
-  // is inside the element (i.e. p1 and p2 are on opposite sides of each other)
-  const dot = dx * (elCX - annCX) + dy * (elCY - annCY)
-  return dot >= 0 ? dist : -dist
-}
-
 function getAllElementRects() {
-  const d = store.state
-  return ELEMENTS.flatMap(desc => {
-    const items = (d[desc.collection] as Array<{ id: string; position: { x: number; y: number }; size: { w: number; h: number } }>) ?? []
-    return items.map(el => {
-      const rs = desc.renderers.get(el.id)?.getRenderedSize() ?? el.size
-      const isPill = elementShape(desc.kind as ElementKind) === 'pill'
-      return {
-        kind: desc.kind as ElementKind, id: el.id,
-        x: el.position.x, y: el.position.y, w: rs.w, h: rs.h,
-        ...(isPill ? { ewZone: rs.h / 2 } : {}),
-      }
-    })
-  })
+  return _getAllElementRects(store.state, ELEMENTS as LayoutElementDesc[])
 }
+
+// ─── Rubber-band selector ─────────────────────────────────────────────────────
+
+const rubberBand = new RubberBandSelector({ selection, getAllElementRects })
+// Insert before snap guide lines so it renders below the guides
+viewGroup.insertBefore(rubberBand.el, snapGuideGroup)
 
 // ─── SVG helper ───────────────────────────────────────────────────────────────
 
@@ -549,38 +469,7 @@ function getSvgPoint(e: MouseEvent): DOMPoint {
  * and combined fragments — all container-type elements.
  */
 function getContainedElements(containerId: string): Array<{ kind: ElementKind; id: string }> {
-  const d = store.state
-  // Find the container in any of the container collections
-  type Container = { id: string; position: { x: number; y: number }; size: { w: number; h: number } }
-  let container: Container | undefined
-  let renderedSize: { w: number; h: number } | undefined
-
-  container = d.packages.find(p => p.id === containerId)
-  if (container) renderedSize = pkgRenderers.get(containerId)?.getRenderedSize()
-
-  if (!container) {
-    container = d.ucSystems.find(u => u.id === containerId)
-    if (container) renderedSize = ucSystemRenderers.get(containerId)?.getRenderedSize()
-  }
-  if (!container) {
-    container = d.combinedFragments?.find(f => f.id === containerId)
-    if (container) renderedSize = seqFragmentRenderers.get(containerId)?.getRenderedSize()
-  }
-
-  if (!container) return []
-  const { w, h } = renderedSize ?? container.size
-  const { x, y } = container.position
-  const result: Array<{ kind: ElementKind; id: string }> = []
-  const inside = (el: { position: { x: number; y: number }; size: { w: number; h: number } }) => {
-    const cx = el.position.x + el.size.w / 2
-    const cy = el.position.y + el.size.h / 2
-    return cx > x && cx < x + w && cy > y && cy < y + h
-  }
-  for (const desc of ELEMENTS) {
-    const items = (d[desc.collection] as Array<{ id: string; position: { x: number; y: number }; size: { w: number; h: number } }>) ?? []
-    items.forEach(el => { if (inside(el)) result.push({ kind: desc.kind, id: el.id }) })
-  }
-  return result
+  return _getContainedElements(containerId, store.state, ELEMENTS as LayoutElementDesc[], pkgRenderers, ucSystemRenderers, seqFragmentRenderers)
 }
 
 const drag    = new DragController(store, getSvgPoint, getContainedElements, updateSnapGuides,
@@ -950,164 +839,22 @@ function getRenderedSizeFor(id: string, found: { el: AnyElement; type: string })
 
 // ─── Properties panel helper ──────────────────────────────────────────────────
 
-/** Update helper keyed by element kind, used by both single and bulk selection panels. */
-type PatchFn = (patch: { multiInstance?: boolean; flowReversed?: boolean; accentColor?: string | undefined }) => void
-const ELEMENT_UPDATE_FNS: Partial<Record<ElementKind, (id: string) => PatchFn>> = {
-  'class':        id => p => store.updateClass(id, p),
-  'storage':      id => p => store.updateStorage(id, p),
-  'actor':        id => p => store.updateActor(id, p),
-  'queue':        id => p => store.updateQueue(id, p),
-  'package':      id => p => store.updatePackage(id, p),
-  'use-case':     id => p => store.updateUseCase(id, p),
-  'uc-system':    id => p => store.updateUCSystem(id, p),
-  'state':        id => p => store.updateState(id, p),
-  'seq-fragment': id => p => store.updateCombinedFragment(id, p),
-}
+const propsOrch = new PropertiesOrchestrator({
+  store, selection, svg,
+  updateFns: {
+    'class':        id => p => store.updateClass(id, p),
+    'storage':      id => p => store.updateStorage(id, p),
+    'actor':        id => p => store.updateActor(id, p),
+    'queue':        id => p => store.updateQueue(id, p),
+    'package':      id => p => store.updatePackage(id, p),
+    'use-case':     id => p => store.updateUseCase(id, p),
+    'uc-system':    id => p => store.updateUCSystem(id, p),
+    'state':        id => p => store.updateState(id, p),
+    'seq-fragment': id => p => store.updateCombinedFragment(id, p),
+  } satisfies Partial<Record<ElementKind, (id: string) => PatchFn>>,
+})
 
-function showPropertiesForSelection() {
-  const items = selection.items
-
-  // ── Multi-selection: 2+ items ────────────────────────────────────────────
-  if (items.length >= 2) {
-    const allConnections = items.every(it => it.kind === 'connection')
-    const noConnections  = items.every(it => it.kind !== 'connection')
-
-    if (allConnections) {
-      hideElementPropertiesPanel()
-      hideBulkElementPanel()
-
-      const connItems: BulkConnectionItem[] = []
-      for (const item of items) {
-        const conn = store.state.connections.find(c => c.id === item.id)
-        if (!conn) continue
-        const srcEl = store.findAnyElement(conn.source.elementId)
-        const tgtEl = store.findAnyElement(conn.target.elementId)
-        const srcConfig = getElementConfig(srcEl?.elementType ?? '')
-        const tgtConfig = getElementConfig(tgtEl?.elementType ?? '')
-        connItems.push({
-          id: conn.id,
-          type: conn.type,
-          sourceMultiplicity: conn.sourceMultiplicity,
-          targetMultiplicity: conn.targetMultiplicity,
-          srcConfig,
-          tgtConfig,
-        })
-      }
-
-      if (connItems.length < 2) { hideBulkConnectionPanel(); return }
-
-      const svgRect = svg.getBoundingClientRect()
-      const screenX = svgRect.right - 20
-      const screenY = svgRect.top + 80
-
-      showBulkConnectionPanel(
-        screenX, screenY, connItems,
-        (type) => {
-          store.beginUndoGroup()
-          for (const c of connItems) store.updateConnection(c.id, { type })
-          store.endUndoGroup()
-        },
-        (srcMult, tgtMult) => {
-          store.beginUndoGroup()
-          for (const c of connItems) store.updateConnection(c.id, { sourceMultiplicity: srcMult, targetMultiplicity: tgtMult })
-          store.endUndoGroup()
-        },
-      )
-      return
-    }
-
-    if (noConnections) {
-      hideElementPropertiesPanel()
-      hideBulkConnectionPanel()
-
-      const elemItems: Array<{ id: string; kind: string; multiInstance: boolean; supportsProperties: boolean; accentColor?: string }> = []
-      for (const item of items) {
-        const found = store.findAnyElement(item.id) as (ReturnType<typeof store.findAnyElement> & { multiInstance?: boolean; accentColor?: string }) | undefined
-        if (!found) continue
-        const config = getElementConfig(found.elementType ?? item.kind)
-        elemItems.push({
-          id: item.id,
-          kind: item.kind,
-          multiInstance: (found as { multiInstance?: boolean }).multiInstance ?? false,
-          supportsProperties: config?.supportsProperties ?? false,
-          accentColor: found.accentColor,
-        })
-      }
-
-      if (elemItems.length < 2) { hideBulkElementPanel(); return }
-
-      const svgRect = svg.getBoundingClientRect()
-      const screenX = svgRect.right - 20
-      const screenY = svgRect.top + 80
-
-      showBulkElementPanel(
-        screenX, screenY, elemItems,
-        (val) => {
-          store.beginUndoGroup()
-          for (const it of elemItems) {
-            ELEMENT_UPDATE_FNS[it.kind as ElementKind]?.(it.id)?.({ multiInstance: val })
-          }
-          store.endUndoGroup()
-        },
-        (color) => {
-          store.beginUndoGroup()
-          for (const it of elemItems) {
-            ELEMENT_UPDATE_FNS[it.kind as ElementKind]?.(it.id)?.({ accentColor: color })
-          }
-          store.endUndoGroup()
-        },
-      )
-      return
-    }
-
-    // Mixed selection (elements + connections): hide all panels
-    hideElementPropertiesPanel()
-    hideAllBulkPanels()
-    return
-  }
-
-  // ── Single selection ─────────────────────────────────────────────────────
-  hideAllBulkPanels()
-  if (items.length !== 1) { hideElementPropertiesPanel(); return }
-
-  const item = items[0]
-
-  const found = store.findAnyElement(item.id) as (ReturnType<typeof store.findAnyElement> & { multiInstance?: boolean; flowReversed?: boolean; accentColor?: string }) | undefined
-  if (!found) { hideElementPropertiesPanel(); return }
-
-  // Use elementType (e.g. 'agent', 'human-agent') not kind (e.g. 'actor') because
-  // multiple elementTypes share one ELEMENTS kind entry ('actor').
-  if (!getElementConfig(found.elementType ?? item.kind)?.supportsProperties) {
-    hideElementPropertiesPanel(); return
-  }
-
-  const elPosition = found.position
-  const elSize = found.size
-  const multiInstance = 'multiInstance' in found ? (found.multiInstance ?? false) : undefined
-  const flowReversed = found.flowReversed
-  const accentColor = found.accentColor
-
-  const updateFn = ELEMENT_UPDATE_FNS[item.kind as ElementKind]?.(item.id)
-  if (!updateFn) { hideElementPropertiesPanel(); return }
-
-  const d = store.state
-  const svgRect = svg.getBoundingClientRect()
-  const vp = d.viewport
-  const screenX = svgRect.left + (elPosition.x + elSize.w) * vp.zoom + vp.x + 8
-  const screenY = svgRect.top  + (elPosition.y + elSize.h / 2) * vp.zoom + vp.y
-
-  const isQueue = item.kind === 'queue'
-  showElementPropertiesPanel(
-    screenX,
-    screenY,
-    multiInstance,
-    (val) => updateFn({ multiInstance: val }),
-    isQueue ? (flowReversed ?? false) : undefined,
-    isQueue ? (reversed) => updateFn({ flowReversed: reversed }) : undefined,
-    accentColor,
-    (color) => updateFn({ accentColor: color }),
-  )
-}
+function showPropertiesForSelection() { propsOrch.show() }
 
 // ─── Element interaction wiring ───────────────────────────────────────────────
 
@@ -1389,130 +1136,14 @@ store.on(ev => {
 
 // ─── Connection line refresh ──────────────────────────────────────────────────
 
-function refreshConnections() {
-  const d = store.state
+const connRefresher = new ConnectionRefresher({
+  store,
+  connRenderers,
+  findElement: (d, id) => findElement(d, id),
+  getRenderedSizeFor: (id, found) => getRenderedSizeFor(id, found),
+})
 
-  // ── Pass 1: determine best port pair for every connection ─────────────────
-  type RouteInfo = {
-    conn: Connection
-    s1Id: string; s1Type: string; s1Pos: { x: number; y: number }; s1Size: { w: number; h: number }
-    s2Id: string; s2Type: string; s2Pos: { x: number; y: number }; s2Size: { w: number; h: number }
-    srcPort: string; tgtPort: string
-  }
-  const routes: RouteInfo[] = []
-
-  for (const conn of d.connections) {
-    if (!connRenderers.get(conn.id)) continue
-    const srcEl = findElement(d, conn.source.elementId)
-    const tgtEl = findElement(d, conn.target.elementId)
-    if (!srcEl || !tgtEl) continue
-
-    const srcSize = getRenderedSizeFor(conn.source.elementId, srcEl)
-    const tgtSize = getRenderedSizeFor(conn.target.elementId, tgtEl)
-
-    const s1Id = conn.source.elementId, s2Id = conn.target.elementId
-    const s1Pos = srcEl.el.position, s2Pos = tgtEl.el.position
-    const s1Size = srcSize, s2Size = tgtSize
-    const s1Type = srcEl.type, s2Type = tgtEl.type
-
-    const srcCfg = getElementConfig(s1Type)
-    const tgtCfg = getElementConfig(s2Type)
-    const srcSides = srcCfg?.ports.map(p => p.id as PortSide)
-    const tgtSides = tgtCfg?.ports.map(p => p.id as PortSide)
-
-    const best = bestPortPair(
-      { x: s1Pos.x, y: s1Pos.y, w: s1Size.w, h: s1Size.h },
-      { x: s2Pos.x, y: s2Pos.y, w: s2Size.w, h: s2Size.h },
-      srcSides,
-      tgtSides,
-      conn.elbowMode ?? 'auto',
-      conn.srcElbowMode ?? 'auto',
-    )
-    conn.source.port = best.src
-    conn.target.port = best.tgt
-
-    routes.push({ conn, s1Id, s1Type, s1Pos, s1Size, s2Id, s2Type, s2Pos, s2Size, srcPort: best.src, tgtPort: best.tgt })
-  }
-
-  // ── Pass 2: count connections per element-side to distribute fracs ────────
-  // Key = elementId + '|' + side → array of route indices using that side on that element
-  const sideMap = new Map<string, number[]>()
-  for (let i = 0; i < routes.length; i++) {
-    const { s1Id, srcPort, s2Id, tgtPort } = routes[i]
-    const k1 = `${s1Id}|${srcPort}`
-    const k2 = `${s2Id}|${tgtPort}`
-    if (!sideMap.has(k1)) sideMap.set(k1, [])
-    if (!sideMap.has(k2)) sideMap.set(k2, [])
-    sideMap.get(k1)!.push(i)
-    sideMap.get(k2)!.push(i)
-  }
-
-  // Assign fractional positions per side, sorted by the peer element's position
-  // so slots are spatially ordered:
-  //   e/w ports (horizontal exits) → sort peers top-to-bottom (by Y center)
-  //   n/s ports (vertical exits)   → sort peers left-to-right (by X center)
-  const srcFracs = new Float32Array(routes.length).fill(0.5)
-  const tgtFracs = new Float32Array(routes.length).fill(0.5)
-  for (const [key, indices] of sideMap) {
-    const n = indices.length
-    if (n <= 1) continue
-    const [elId, side] = key.split('|')
-    const horizontal = side === 'e' || side === 'w'
-
-    // Sort indices by the *peer* element's center coordinate
-    const sorted = [...indices].sort((a, b) => {
-      const ra = routes[a], rb = routes[b]
-      const peerA = ra.s1Id === elId ? ra.s2Pos : ra.s1Pos
-      const sizeA = ra.s1Id === elId ? ra.s2Size : ra.s1Size
-      const peerB = rb.s1Id === elId ? rb.s2Pos : rb.s1Pos
-      const sizeB = rb.s1Id === elId ? rb.s2Size : rb.s1Size
-      const centerA = horizontal ? peerA.y + sizeA.h / 2 : peerA.x + sizeA.w / 2
-      const centerB = horizontal ? peerB.y + sizeB.h / 2 : peerB.x + sizeB.w / 2
-      return centerA - centerB
-    })
-
-    for (let j = 0; j < n; j++) {
-      const frac = (j + 1) / (n + 1)
-      const routeIdx = sorted[j]
-      if (routes[routeIdx].s1Id === elId) srcFracs[routeIdx] = frac
-      else tgtFracs[routeIdx] = frac
-    }
-  }
-
-  // ── Pass 3: render ────────────────────────────────────────────────────────
-  for (let i = 0; i < routes.length; i++) {
-    const { conn, s1Pos, s1Size, srcPort, s2Pos, s2Size, tgtPort } = routes[i]
-    const r = connRenderers.get(conn.id)!
-
-    const s = absolutePortPosition(s1Pos.x, s1Pos.y, s1Size.w, s1Size.h, srcPort, srcFracs[i])
-    const t = absolutePortPosition(s2Pos.x, s2Pos.y, s2Size.w, s2Size.h, tgtPort, tgtFracs[i])
-    const srcRect = { x: s1Pos.x, y: s1Pos.y, w: s1Size.w, h: s1Size.h }
-    const tgtRect = { x: s2Pos.x, y: s2Pos.y, w: s2Size.w, h: s2Size.h }
-    r.updatePoints(s.x, s.y, t.x, t.y, srcPort, tgtPort, conn, 0, srcRect, tgtRect)
-  }
-
-  // ── Pass 4: label deconfliction ───────────────────────────────────────────
-  const LABEL_FONT_SIZE = 12
-  const LABEL_H = LABEL_FONT_SIZE + 4
-  const connLabelBoxes: LabelBox[] = []
-
-  for (const conn of store.state.connections) {
-    const r = connRenderers.get(conn.id)
-    if (!r) continue
-    const mid = r.getLabelMidpoint()
-    if (!mid) continue
-    const text = conn.label || getConnStereotype(conn.type)
-    if (!text) continue
-    connLabelBoxes.push({ id: conn.id, x: mid.x, y: mid.y, w: estimateTextWidth(text, LABEL_FONT_SIZE) + 4, h: LABEL_H })
-  }
-
-  if (connLabelBoxes.length > 1) {
-    const results = deconflict([{ name: 'conn-labels', boxes: connLabelBoxes }])
-    for (const [id, pos] of results) {
-      connRenderers.get(id)?.setLabelPosition(pos.x, pos.y)
-    }
-  }
-}
+function refreshConnections() { connRefresher.refresh() }
 
 // ─── Sequence connections overlay ────────────────────────────────────────────
 // Delegates to seqCtrl (SequenceDiagramController)
@@ -1604,9 +1235,6 @@ svg.addEventListener('dblclick', e => {
 
 // ─── Rubber-band selection ────────────────────────────────────────────────────
 
-let rubberBanding = false
-let rubberStart = { x: 0, y: 0 }
-
 svg.addEventListener('mousedown', e => {
   if (connect.isConnecting) return
   if (e.button !== 0) return
@@ -1627,13 +1255,7 @@ svg.addEventListener('mousedown', e => {
   // Only start rubber-band in select mode
   if (toolbar.activeTool !== 'select') return
   const pt = getSvgPoint(e)
-  rubberBanding = true
-  rubberStart = { x: pt.x, y: pt.y }
-  rubberBandRect.setAttribute('x', String(pt.x))
-  rubberBandRect.setAttribute('y', String(pt.y))
-  rubberBandRect.setAttribute('width', '0')
-  rubberBandRect.setAttribute('height', '0')
-  rubberBandRect.style.display = ''
+  rubberBand.start(pt)
   e.preventDefault()
 })
 
@@ -1646,22 +1268,12 @@ window.addEventListener('mousemove', e => {
   if (drag.isDragging)      drag.onMouseMove(e)
   if (resize.isResizing)    resize.onMouseMove(e)
   if (connect.isConnecting) connect.onMouseMove(e)
-  if (rubberBanding) {
-    const pt = getSvgPoint(e)
-    const rx = Math.min(pt.x, rubberStart.x)
-    const ry = Math.min(pt.y, rubberStart.y)
-    const rw = Math.abs(pt.x - rubberStart.x)
-    const rh = Math.abs(pt.y - rubberStart.y)
-    rubberBandRect.setAttribute('x', String(rx))
-    rubberBandRect.setAttribute('y', String(ry))
-    rubberBandRect.setAttribute('width', String(rw))
-    rubberBandRect.setAttribute('height', String(rh))
-  }
+  if (rubberBand.isActive)  rubberBand.onMouseMove(getSvgPoint(e))
 })
 
 // Update resize cursor based on hover position
 svg.addEventListener('mousemove', e => {
-  if (drag.isDragging || resize.isResizing || connect.isConnecting || rubberBanding) return
+  if (drag.isDragging || resize.isResizing || connect.isConnecting || rubberBand.isActive) return
 
   // Collect all element renderers so we can set cursor directly on each <g>
   // (CSS cursor:move on the element classes overrides svg.style.cursor)
@@ -1702,25 +1314,7 @@ window.addEventListener('mouseup', e => {
   }
   if (drag.isDragging)   { drag.onMouseUp(); return }
   if (resize.isResizing) { resize.onMouseUp(); return }
-  if (rubberBanding) {
-    rubberBanding = false
-    rubberBandRect.style.display = 'none'
-    const rx = parseFloat(rubberBandRect.getAttribute('x') ?? '0')
-    const ry = parseFloat(rubberBandRect.getAttribute('y') ?? '0')
-    const rw = parseFloat(rubberBandRect.getAttribute('width') ?? '0')
-    const rh = parseFloat(rubberBandRect.getAttribute('height') ?? '0')
-    // Only commit if the rect is large enough to be intentional (not a stray click)
-    if (rw > 4 || rh > 4) {
-      const allEls = getAllElementRects()
-      for (const el of allEls) {
-        // Select elements whose bounds overlap the rubber-band rect
-        if (el.x + el.w > rx && el.x < rx + rw && el.y + el.h > ry && el.y < ry + rh) {
-          selection.select({ kind: el.kind, id: el.id }, true)
-        }
-      }
-    }
-    return
-  }
+  if (rubberBand.isActive) { rubberBand.onMouseUp(); return }
   if (connect.isConnecting) {
     const target = e.target as Node
     const el = target instanceof Element ? target : null
@@ -1798,91 +1392,6 @@ document.addEventListener('keydown', e => {
 
 // ─── Copy / Paste ─────────────────────────────────────────────────────────────
 
-type ClipboardEntry =
-  | { kind: 'class';       data: UmlClass }
-  | { kind: 'package';     data: UmlPackage }
-  | { kind: 'storage';     data: Storage }
-  | { kind: 'actor';       data: Actor }
-  | { kind: 'queue';       data: Queue }
-  | { kind: 'use-case';    data: UseCase }
-  | { kind: 'uc-system';   data: UCSystem }
-  | { kind: 'state';       data: State }
-  | { kind: 'start-state'; data: StartState }
-  | { kind: 'end-state';   data: EndState }
-  | { kind: 'seq-diagram';  data: SequenceDiagram }
-  | { kind: 'seq-fragment'; data: CombinedFragment }
-  | { kind: 'comment';      data: Comment }
-
-// Simple clipboard — array of deep-cloned entity snapshots + connections between them
-let clipboard: ClipboardEntry[] = []
-let clipboardConnections: Connection[] = []
-
-const PASTE_OFFSET = 20
-
-function doCopy() {
-  const d = store.state
-  clipboard = []
-  clipboardConnections = []
-  const selectedIds = new Set(selection.items.map(i => i.id))
-  for (const item of selection.items) {
-    const desc = ELEMENTS.find(d => d.kind === item.kind)
-    if (!desc) continue
-    const items = (d[desc.collection] as Array<{ id: string }>) ?? []
-    const el = items.find(e => e.id === item.id)
-    if (el) clipboard.push({ kind: desc.kind, data: JSON.parse(JSON.stringify(el)) } as ClipboardEntry)
-  }
-  // Include connections where both endpoints are selected
-  for (const conn of d.connections) {
-    if (selectedIds.has(conn.source.elementId) && selectedIds.has(conn.target.elementId)) {
-      clipboardConnections.push(JSON.parse(JSON.stringify(conn)))
-    }
-  }
-  updateEditMenu()
-}
-
-function doPaste() {
-  if (clipboard.length === 0) return
-  selection.clear()
-  // Map old id → new id for remapping connections
-  const idMap = new Map<string, string>()
-  for (const entry of clipboard) {
-    const newId = crypto.randomUUID()
-    idMap.set(entry.data.id, newId)
-    const pos = {
-      x: entry.data.position.x + PASTE_OFFSET,
-      y: entry.data.position.y + PASTE_OFFSET,
-    }
-    const desc = ELEMENTS.find(d => d.kind === entry.kind)
-    if (desc) {
-      // Remap pinnedTo if the pinned target was also copied
-      const pinnedTo = (entry.data as { pinnedTo?: string }).pinnedTo
-      const remappedPinnedTo = pinnedTo ? (idMap.get(pinnedTo) ?? null) : null
-      const pinnedOffset = remappedPinnedTo ? (entry.data as { pinnedOffset?: unknown }).pinnedOffset : null
-      const copy = { ...entry.data, id: newId, position: pos, ...(entry.kind === 'comment' ? { pinnedTo: remappedPinnedTo, pinnedOffset } : {}) }
-      desc.add(copy)
-      selection.select({ kind: desc.kind, id: newId }, true)
-    }
-  }
-  // Paste connections with remapped endpoints
-  for (const conn of clipboardConnections) {
-    const newSrc = idMap.get(conn.source.elementId)
-    const newTgt = idMap.get(conn.target.elementId)
-    if (newSrc && newTgt) {
-      store.addConnection({
-        ...conn,
-        id: crypto.randomUUID(),
-        source: { ...conn.source, elementId: newSrc },
-        target: { ...conn.target, elementId: newTgt },
-      })
-    }
-  }
-  // Shift clipboard so repeated pastes cascade rather than stack
-  clipboard = clipboard.map(entry => ({
-    ...entry,
-    data: { ...entry.data, position: { x: entry.data.position.x + PASTE_OFFSET, y: entry.data.position.y + PASTE_OFFSET } },
-  })) as typeof clipboard
-}
-
 document.addEventListener('keydown', e => {
   // Skip when typing in an input / textarea
   if ((e.target as HTMLElement).closest('input, textarea, [contenteditable]')) return
@@ -1919,116 +1428,22 @@ document.addEventListener('keydown', e => {
 
 // ─── Pan & zoom ───────────────────────────────────────────────────────────────
 
-let panActive = false
-let panStart = { x: 0, y: 0 }
-let vpStart  = { x: 0, y: 0 }
-
-svg.addEventListener('mousedown', e => {
-  if (toolbar.activeTool !== 'pan') return
-  panActive = true
-  panStart = { x: e.clientX, y: e.clientY }
-  vpStart  = { x: store.state.viewport.x, y: store.state.viewport.y }
-  canvasContainer.classList.add('pan-grabbing')
-})
-
-window.addEventListener('mousemove', e => {
-  if (!panActive) return
-  store.updateViewport({ x: vpStart.x + e.clientX - panStart.x, y: vpStart.y + e.clientY - panStart.y })
-  applyViewport()
-})
-
-window.addEventListener('mouseup', () => {
-  panActive = false
-  canvasContainer.classList.remove('pan-grabbing')
-})
-
-svg.addEventListener('wheel', e => {
-  e.preventDefault()
-  const vp = store.state.viewport
-  const newZoom = Math.min(4, Math.max(0.2, vp.zoom * (e.deltaY < 0 ? 1.1 : 0.9)))
-
-  // Keep the canvas point under the cursor fixed during zoom.
-  // cursor in SVG element space → canvas point before zoom → recompute offset
-  const svgRect = svg.getBoundingClientRect()
-  const cursorX = e.clientX - svgRect.left
-  const cursorY = e.clientY - svgRect.top
-  // canvasPoint = (cursor - offset) / oldZoom  →  newOffset = cursor - canvasPoint * newZoom
-  const newX = cursorX - ((cursorX - vp.x) / vp.zoom) * newZoom
-  const newY = cursorY - ((cursorY - vp.y) / vp.zoom) * newZoom
-
-  store.updateViewport({ zoom: newZoom, x: newX, y: newY })
-  applyViewport()
-}, { passive: false })
-
-// ─── Zoom indicator / controller ─────────────────────────────────────────────
-
 const canvasContainer = document.getElementById('canvas-container')!
 
-const zoomCtrl = document.createElement('div')
-zoomCtrl.id = 'zoom-ctrl'
-zoomCtrl.innerHTML = `
-  <button id="zoom-out" class="zoom-btn" title="Zoom out (scroll down)">−</button>
-  <span id="zoom-label" class="zoom-label">100%</span>
-  <button id="zoom-in"  class="zoom-btn" title="Zoom in (scroll up)">+</button>
-  <button id="zoom-reset" class="zoom-btn zoom-reset" title="Reset zoom">⟳</button>
-`
-canvasContainer.appendChild(zoomCtrl)
-
-// Pan mode cursor — keep grab cursor visible whenever pan tool is active
-toolbar.onToolChange(tool => {
-  canvasContainer.classList.toggle('pan-mode', tool === 'pan')
-  if (tool !== 'pan') canvasContainer.classList.remove('pan-grabbing')
-  if (tool === 'comment') ensureCommentsVisible()
+const viewport = new ViewportController(store, svg, viewGroup, canvasContainer, toolbar, {
+  dismissPopovers: () => {
+    dismissConnPopover?.()
+    dismissConnPopover = null
+    document.getElementById('conn-popover')?.remove()
+    hideMsgPopover()
+    hideElementPropertiesPanel()
+  },
+  onViewportChanged: () => seqCtrl.refreshLifelineAddButtons(),
 })
-if (toolbar.activeTool === 'pan') canvasContainer.classList.add('pan-mode')
-
-const zoomLabel = document.getElementById('zoom-label')!
-
-function updateZoomLabel() {
-  const z = store.state.viewport.zoom
-  zoomLabel.textContent = `${Math.round(z * 100)}%`
-}
-
-document.getElementById('zoom-out')!.addEventListener('click', () => {
-  const vp = store.state.viewport
-  const newZoom = Math.min(4, Math.max(0.2, vp.zoom * 0.9))
-  store.updateViewport({ zoom: newZoom })
-  applyViewport()
-  updateZoomLabel()
-})
-
-document.getElementById('zoom-in')!.addEventListener('click', () => {
-  const vp = store.state.viewport
-  const newZoom = Math.min(4, Math.max(0.2, vp.zoom * 1.1))
-  store.updateViewport({ zoom: newZoom })
-  applyViewport()
-  updateZoomLabel()
-})
-
-document.getElementById('zoom-reset')!.addEventListener('click', () => {
-  store.updateViewport({ zoom: 1, x: 0, y: 0 })
-  applyViewport()
-  updateZoomLabel()
-})
-
-function applyViewport() {
-  const { x, y, zoom } = store.state.viewport
-  viewGroup.setAttribute('transform', `translate(${x},${y}) scale(${zoom})`)
-  // Shift dot-grid background by pan offset so it appears fixed in screen space
-  const DOT_GRID_SIZE = 50 * zoom
-  const bgX = ((x % DOT_GRID_SIZE) + DOT_GRID_SIZE) % DOT_GRID_SIZE
-  const bgY = ((y % DOT_GRID_SIZE) + DOT_GRID_SIZE) % DOT_GRID_SIZE
-  ;(svg.parentElement as HTMLElement).style.backgroundSize = `${DOT_GRID_SIZE}px ${DOT_GRID_SIZE}px`
-  ;(svg.parentElement as HTMLElement).style.backgroundPosition = `${bgX}px ${bgY}px`
-  updateZoomLabel()
-  seqCtrl.refreshLifelineAddButtons()
-  // Dismiss open popovers — they're screen-pinned and would drift from their element
-  dismissConnPopover?.()
-  dismissConnPopover = null
-  document.getElementById('conn-popover')?.remove()
-  hideMsgPopover()
-  hideElementPropertiesPanel()
-}
+viewport.register()
+// Ensure comment visibility is toggled when the comment tool is activated
+toolbar.onToolChange(tool => { if (tool === 'comment') ensureCommentsVisible() })
+function applyViewport() { viewport.applyViewport() }
 
 // ─── Build initial diagram ────────────────────────────────────────────────────
 
