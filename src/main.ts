@@ -2553,7 +2553,7 @@ function refreshSeqDiagram(sd: SequenceDiagram, sdR: SequenceDiagramRenderer) {
     // Double-click on arrow → inline rename (dismiss popover first)
     g.addEventListener('dblclick', (e) => {
       e.stopPropagation()
-      document.getElementById('msg-popover')?.remove()
+      hideMsgPopover()
       const labelEl = g.querySelector<SVGTextElement>('.seq-conn-label')
       if (!labelEl) return
       const latestSd = store.state.sequenceDiagrams.find(s => s.id === sd.id)
@@ -3073,7 +3073,7 @@ function applyViewport() {
   dismissConnPopover?.()
   dismissConnPopover = null
   document.getElementById('conn-popover')?.remove()
-  document.getElementById('msg-popover')?.remove()
+  hideMsgPopover()
   hideElementPropertiesPanel()
 }
 
