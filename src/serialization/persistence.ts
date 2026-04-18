@@ -19,6 +19,20 @@ import { parseAttribute, serializeAttribute } from '../entities/Attribute.ts'
 import { parseMethod, serializeMethod } from '../entities/Method.ts'
 import { getElementConfig } from '../config/registry.ts'
 import { LATTE, PRINT } from '../themes/catppuccin.ts'
+import {
+  setActiveThumbnailId as _setActiveThumbnailId,
+  getActiveThumbnailId,
+  cacheThumbnail,
+} from './ThumbnailCache.ts'
+import {
+  schedulePngWrite as _schedulePngWrite,
+  resetPngAutosave,
+} from './PngAutosave.ts'
+
+// Re-export thumbnail cache API (imported by main.ts via persistence.ts)
+export { setActiveThumbnailId, getThumbnailDataUrl } from './ThumbnailCache.ts'
+// Re-export PNG autosave callbacks (imported by main.ts via persistence.ts)
+export { onPngSaveError, onPngSaveRecovered } from './PngAutosave.ts'
 
 // ─── JSON persistence (localStorage only) ────────────────────────────────────
 
@@ -31,119 +45,34 @@ export function getActiveFileName(): string | null {
   return activeFileHandle?.name ?? null
 }
 
-// ─── In-memory PNG thumbnail cache ───────────────────────────────────────────
-// Keyed by recent-file ID (== diagram.id). Updated every time a PNG is built.
-// Max ~10 entries (matches MAX_RECENT in Dashboard.ts). No size cap needed since
-// each entry is one dashboard-thumbnail JPEG/PNG — a few hundred KB at most.
-
-const _thumbCache = new Map<string, string>()
-let   _activeThumbnailId: string | null = null
-
-/** Register the recent-file ID that maps to the currently open file handle. */
-export function setActiveThumbnailId(id: string | null) {
-  _activeThumbnailId = id
-}
-
-/** Return the cached data-URL thumbnail for the given recent-file ID, or null. */
-export function getThumbnailDataUrl(id: string): string | null {
-  return _thumbCache.get(id) ?? null
-}
-
-function _cacheThumbnail(id: string | null | undefined, bytes: Uint8Array) {
-  if (!id) return
-  const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'image/png' })
-  const old = _thumbCache.get(id)
-  if (old) URL.revokeObjectURL(old)
-  _thumbCache.set(id, URL.createObjectURL(blob))
-}
-
 /** Save to localStorage (and autosave to active .arch.png handle if open). */
 export function saveDiagram(diagram: Diagram) {
   localStorage.setItem(LS_JSON, JSON.stringify(serializeDiagramV2(diagram), null, 2))
-  if (activeFileHandle) schedulePngWrite(diagram)
+  if (activeFileHandle) _schedulePngWrite(diagram, _doPngWrite)
 }
 
-// ─── PNG autosave — debounced, single writer ──────────────────────────────────
-// Rapid mutations coalesce into one write. A write already in flight is never
-// interrupted — the latest diagram snapshot is queued and flushed afterwards.
-
-let _pngDebounceTimer: ReturnType<typeof setTimeout> | null = null
-let _pngWriting = false
-let _pngPending: Diagram | null = null
-let _pngFailCount = 0          // consecutive write failures (reset on success)
-const PNG_DEBOUNCE_MS  = 1500
-const PNG_RETRY_DELAY  = 3000  // wait 3 s before first retry after a failure
-const PNG_MAX_FAILURES = 2     // surface error to UI after this many consecutive fails
-
-// Callbacks wired from main.ts so persistence.ts stays UI-free.
-let _onSaveError:     ((msg: string) => void) | null = null
-let _onSaveRecovered: (() => void)            | null = null
-
-export function onPngSaveError    (fn: (msg: string) => void) { _onSaveError     = fn }
-export function onPngSaveRecovered(fn: () => void)            { _onSaveRecovered = fn }
-
-function schedulePngWrite(diagram: Diagram) {
-  _pngPending = diagram  // always keep the freshest snapshot
-  if (_pngWriting) return // a write is in flight — it will flush _pngPending when done
-  if (_pngDebounceTimer !== null) clearTimeout(_pngDebounceTimer)
-  _pngDebounceTimer = setTimeout(flushPngWrite, PNG_DEBOUNCE_MS)
-}
-
-async function flushPngWrite() {
-  _pngDebounceTimer = null
-  if (!activeFileHandle || !_pngPending) return
-  _pngWriting = true
-  const snapshot = _pngPending
-  _pngPending = null
-  let writeError: unknown = null
-  try {
-    const bytes = await buildArchPngBytes(snapshot)
-    // Cache thumbnail regardless of whether the file write succeeds.
-    _cacheThumbnail(_activeThumbnailId, bytes)
-    if (activeFileHandle) {
-      const w = await activeFileHandle.createWritable()
-      await w.write(bytes.buffer as ArrayBuffer)
-      await w.close()
-    }
-    // Success — reset failure counter and clear any error banner.
-    if (_pngFailCount > 0) {
-      _pngFailCount = 0
-      _onSaveRecovered?.()
-    }
-  } catch (err) {
-    writeError = err
-    _pngFailCount++
-    if (_pngFailCount >= PNG_MAX_FAILURES) {
-      // Surface the problem to the user.
-      const msg = err instanceof Error ? err.message : String(err)
-      _onSaveError?.(msg)
-    }
-    // Queue a retry — put the failed snapshot back if nothing newer arrived.
-    if (!_pngPending) _pngPending = snapshot
-  } finally {
-    _pngWriting = false
-    if (_pngPending && activeFileHandle) {
-      // Use the normal debounce for new mutations; use the retry delay for
-      // repeated failures so we don't hammer the FS on a persistent error.
-      const delay = writeError ? PNG_RETRY_DELAY : PNG_DEBOUNCE_MS
-      _pngDebounceTimer = setTimeout(flushPngWrite, delay)
-    }
+async function _doPngWrite(snapshot: Diagram): Promise<void> {
+  const bytes = await buildArchPngBytes(snapshot)
+  // Cache thumbnail regardless of whether the file write succeeds.
+  cacheThumbnail(getActiveThumbnailId(), bytes)
+  if (activeFileHandle) {
+    const w = await activeFileHandle.createWritable()
+    await w.write(bytes.buffer as ArrayBuffer)
+    await w.close()
   }
 }
 
 /** Close the active file handle (e.g. on New diagram). */
 export function closeActiveFile() {
   activeFileHandle = null
-  _activeThumbnailId = null
-  _pngFailCount = 0
-  if (_pngDebounceTimer !== null) { clearTimeout(_pngDebounceTimer); _pngDebounceTimer = null }
-  _pngPending = null
+  _setActiveThumbnailId(null)
+  resetPngAutosave()
 }
 
 /** Set a file handle as the active autosave target (e.g. resumed from dashboard). */
 export function setActiveFileHandle(handle: FileSystemFileHandle | null) {
   activeFileHandle = handle
-  _pngFailCount = 0  // fresh handle — clear any prior error state
+  resetPngAutosave()
 }
 
 /**
@@ -163,14 +92,14 @@ export async function openAndSaveToFile(
   const bytes = await buildArchPngBytes(diagram)
   if (!('showSaveFilePicker' in window)) {
     triggerDownload(new Blob([bytes.buffer as ArrayBuffer], { type: 'image/png' }), suggestedName)
-    _cacheThumbnail(diagram.id, bytes)
+    cacheThumbnail(diagram.id, bytes)
     return true
   }
   if (activeFileHandle && !forceNew) {
     const w = await activeFileHandle.createWritable()
     await w.write(bytes.buffer as ArrayBuffer)
     await w.close()
-    _cacheThumbnail(diagram.id, bytes)
+    cacheThumbnail(diagram.id, bytes)
     return true
   }
   try {
@@ -181,11 +110,11 @@ export async function openAndSaveToFile(
       types: [{ description: 'Archetype diagram', accept: { 'image/png': ['.png'] } }],
     })
     activeFileHandle = handle
-    _pngFailCount = 0
+    resetPngAutosave()
     const w = await handle.createWritable()
     await w.write(bytes.buffer as ArrayBuffer)
     await w.close()
-    _cacheThumbnail(diagram.id, bytes)
+    cacheThumbnail(diagram.id, bytes)
     return handle  // caller should persist this handle
   } catch (err: unknown) {
     if (err instanceof DOMException && err.name === 'AbortError') return null
