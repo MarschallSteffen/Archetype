@@ -19,6 +19,7 @@ import { ResizeController } from './interaction/ResizeController.ts'
 import { ConnectionController } from './interaction/ConnectionController.ts'
 import { SelectionManager } from './interaction/SelectionManager.ts'
 import { InlineEditor } from './interaction/InlineEditor.ts'
+import { ViewportController } from './interaction/ViewportController.ts'
 import { Toolbar, type Tool as ToolKind } from './ui/Toolbar.ts'
 import { SequenceDiagramController } from './ui/SequenceDiagramController.ts'
 import { FileMenu } from './ui/FileMenu.ts'
@@ -1919,116 +1920,22 @@ document.addEventListener('keydown', e => {
 
 // ─── Pan & zoom ───────────────────────────────────────────────────────────────
 
-let panActive = false
-let panStart = { x: 0, y: 0 }
-let vpStart  = { x: 0, y: 0 }
-
-svg.addEventListener('mousedown', e => {
-  if (toolbar.activeTool !== 'pan') return
-  panActive = true
-  panStart = { x: e.clientX, y: e.clientY }
-  vpStart  = { x: store.state.viewport.x, y: store.state.viewport.y }
-  canvasContainer.classList.add('pan-grabbing')
-})
-
-window.addEventListener('mousemove', e => {
-  if (!panActive) return
-  store.updateViewport({ x: vpStart.x + e.clientX - panStart.x, y: vpStart.y + e.clientY - panStart.y })
-  applyViewport()
-})
-
-window.addEventListener('mouseup', () => {
-  panActive = false
-  canvasContainer.classList.remove('pan-grabbing')
-})
-
-svg.addEventListener('wheel', e => {
-  e.preventDefault()
-  const vp = store.state.viewport
-  const newZoom = Math.min(4, Math.max(0.2, vp.zoom * (e.deltaY < 0 ? 1.1 : 0.9)))
-
-  // Keep the canvas point under the cursor fixed during zoom.
-  // cursor in SVG element space → canvas point before zoom → recompute offset
-  const svgRect = svg.getBoundingClientRect()
-  const cursorX = e.clientX - svgRect.left
-  const cursorY = e.clientY - svgRect.top
-  // canvasPoint = (cursor - offset) / oldZoom  →  newOffset = cursor - canvasPoint * newZoom
-  const newX = cursorX - ((cursorX - vp.x) / vp.zoom) * newZoom
-  const newY = cursorY - ((cursorY - vp.y) / vp.zoom) * newZoom
-
-  store.updateViewport({ zoom: newZoom, x: newX, y: newY })
-  applyViewport()
-}, { passive: false })
-
-// ─── Zoom indicator / controller ─────────────────────────────────────────────
-
 const canvasContainer = document.getElementById('canvas-container')!
 
-const zoomCtrl = document.createElement('div')
-zoomCtrl.id = 'zoom-ctrl'
-zoomCtrl.innerHTML = `
-  <button id="zoom-out" class="zoom-btn" title="Zoom out (scroll down)">−</button>
-  <span id="zoom-label" class="zoom-label">100%</span>
-  <button id="zoom-in"  class="zoom-btn" title="Zoom in (scroll up)">+</button>
-  <button id="zoom-reset" class="zoom-btn zoom-reset" title="Reset zoom">⟳</button>
-`
-canvasContainer.appendChild(zoomCtrl)
-
-// Pan mode cursor — keep grab cursor visible whenever pan tool is active
-toolbar.onToolChange(tool => {
-  canvasContainer.classList.toggle('pan-mode', tool === 'pan')
-  if (tool !== 'pan') canvasContainer.classList.remove('pan-grabbing')
-  if (tool === 'comment') ensureCommentsVisible()
+const viewport = new ViewportController(store, svg, viewGroup, canvasContainer, toolbar, {
+  dismissPopovers: () => {
+    dismissConnPopover?.()
+    dismissConnPopover = null
+    document.getElementById('conn-popover')?.remove()
+    hideMsgPopover()
+    hideElementPropertiesPanel()
+  },
+  onViewportChanged: () => seqCtrl.refreshLifelineAddButtons(),
 })
-if (toolbar.activeTool === 'pan') canvasContainer.classList.add('pan-mode')
-
-const zoomLabel = document.getElementById('zoom-label')!
-
-function updateZoomLabel() {
-  const z = store.state.viewport.zoom
-  zoomLabel.textContent = `${Math.round(z * 100)}%`
-}
-
-document.getElementById('zoom-out')!.addEventListener('click', () => {
-  const vp = store.state.viewport
-  const newZoom = Math.min(4, Math.max(0.2, vp.zoom * 0.9))
-  store.updateViewport({ zoom: newZoom })
-  applyViewport()
-  updateZoomLabel()
-})
-
-document.getElementById('zoom-in')!.addEventListener('click', () => {
-  const vp = store.state.viewport
-  const newZoom = Math.min(4, Math.max(0.2, vp.zoom * 1.1))
-  store.updateViewport({ zoom: newZoom })
-  applyViewport()
-  updateZoomLabel()
-})
-
-document.getElementById('zoom-reset')!.addEventListener('click', () => {
-  store.updateViewport({ zoom: 1, x: 0, y: 0 })
-  applyViewport()
-  updateZoomLabel()
-})
-
-function applyViewport() {
-  const { x, y, zoom } = store.state.viewport
-  viewGroup.setAttribute('transform', `translate(${x},${y}) scale(${zoom})`)
-  // Shift dot-grid background by pan offset so it appears fixed in screen space
-  const DOT_GRID_SIZE = 50 * zoom
-  const bgX = ((x % DOT_GRID_SIZE) + DOT_GRID_SIZE) % DOT_GRID_SIZE
-  const bgY = ((y % DOT_GRID_SIZE) + DOT_GRID_SIZE) % DOT_GRID_SIZE
-  ;(svg.parentElement as HTMLElement).style.backgroundSize = `${DOT_GRID_SIZE}px ${DOT_GRID_SIZE}px`
-  ;(svg.parentElement as HTMLElement).style.backgroundPosition = `${bgX}px ${bgY}px`
-  updateZoomLabel()
-  seqCtrl.refreshLifelineAddButtons()
-  // Dismiss open popovers — they're screen-pinned and would drift from their element
-  dismissConnPopover?.()
-  dismissConnPopover = null
-  document.getElementById('conn-popover')?.remove()
-  hideMsgPopover()
-  hideElementPropertiesPanel()
-}
+viewport.register()
+// Ensure comment visibility is toggled when the comment tool is activated
+toolbar.onToolChange(tool => { if (tool === 'comment') ensureCommentsVisible() })
+function applyViewport() { viewport.applyViewport() }
 
 // ─── Build initial diagram ────────────────────────────────────────────────────
 
