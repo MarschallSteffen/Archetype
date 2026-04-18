@@ -92,7 +92,8 @@ src/
     CombinedFragment.ts # elementType: 'seq-fragment'
     Connection.ts    # source/target endpoints, type, multiplicities
   geometry/
-    shapeGeometry.ts # Pure shape border math: elementShape, borderPointForShape, shapedBorderDist
+    shapeGeometry.ts  # Pure shape border math: elementShape, borderPointForShape, shapedBorderDist
+    elementLayout.ts  # getAllElementRects, getContainedElements — layout utilities for hit-testing/drag
   renderers/         # SVG renderers — one per entity type + routing.ts + svgUtils.ts
     ConnectionRefresher.ts  # 4-pass connection routing engine; refresh() called via main.ts wrapper
   interaction/       # Drag, resize, connect, select, snap, inline-edit controllers
