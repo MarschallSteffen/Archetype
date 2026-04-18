@@ -121,7 +121,7 @@ export async function openAndSaveToFile(
 // ─── .arch.svg — SVG with embedded diagram JSON ──────────────────────────────
 
 const ARCH_KEYWORD = 'archetype-diagram'
-const ARCH_META_TAG = 'archetype:diagram'
+const ARCH_META_TAG = 'archetype-diagram'
 
 /**
  * Build a self-contained .arch.svg string: the rendered SVG with diagram JSON
