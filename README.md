@@ -61,49 +61,6 @@ npm run test:watch
 npm run lint
 ```
 
-## Usage
-
-| Action | How |
-|---|---|
-| Add element | Click a toolbar button or press its keyboard shortcut |
-| Select | Click an element; Shift-click to add to selection |
-| Multi-select | Drag a rubber-band rectangle over elements |
-| Move | Drag selected elements |
-| Resize | Drag a corner or edge handle |
-| Connect | Hover an element → drag a port dot to another element |
-| Edit label | Double-click an element or connection label |
-| Delete | Select then press Delete or Backspace |
-| Copy / Paste | Ctrl/Cmd + C / V |
-| Pan | Hold H or middle-click drag |
-| Zoom | Scroll wheel or pinch |
-| Open / Save | File menu (top-left) — saves as `.arch.png` |
-| AI prompt | Click the sparkle button (toolbar bottom) to copy a prompt, paste into any LLM, then open the returned JSON via File → Open |
-
-### `.arch.png` format
-
-All saves produce a `.arch.png` file — a valid PNG image with the diagram JSON embedded in an `iTXt` metadata chunk (keyword: `archetype-diagram`). Benefits:
-
-- **Portable preview** — open in any image viewer, browser, or share as a screenshot
-- **Single source of truth** — no separate `.json` file needed; the PNG _is_ the save file
-- **Lossless round-trip** — Open the `.arch.png` in Archetype to resume editing with full fidelity
-- **Dashboard thumbnails** — recently opened files show the PNG as a card preview automatically
-
-### Keyboard shortcuts
-
-| Key | Tool |
-|---|---|
-| V | Select |
-| H | Pan |
-| C | UML Class |
-| P | Package |
-| A | Agent |
-| U | Human Agent |
-| S | Storage |
-| Q | Queue |
-| E | Use Case |
-| T | State |
-| L | Sequence Diagram |
-
 ## Architecture
 
 Vite + vanilla TypeScript + SVG. No runtime dependencies.
