@@ -1,5 +1,12 @@
 import type { ConnectionType } from '../entities/Connection.ts'
 
+/** Declares which property controls an element type supports in the properties panel. */
+export interface PropertyCapabilities {
+  multiInstance?: true
+  flowReversed?: true
+  stereotype?: true
+}
+
 /**
  * Describes one connection port on an element.
  * `id` is a stable key (e.g. 'n', 'e', 's', 'w', or custom names for specialised elements).
@@ -48,10 +55,15 @@ export interface ElementConfig {
    */
   supportsMultiplicity: boolean
   /**
-   * Whether to show the Element Properties panel (multiInstance / flowReversed toggles)
-   * when this element is selected. Defaults to false when absent.
+   * Whether to show the Element Properties panel when this element is selected.
+   * Defaults to false when absent.
    */
   supportsProperties?: boolean
+  /**
+   * Declares which property controls to show in the properties panel.
+   * Only meaningful when `supportsProperties` is true.
+   */
+  properties?: PropertyCapabilities
   /**
    * Border shape used for hit-testing and annotation pin-line geometry.
    * Defaults to 'rect' when absent.

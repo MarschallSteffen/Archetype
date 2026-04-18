@@ -5,6 +5,13 @@ import type { Point, Size } from './common.ts'
 
 export type Stereotype = 'class' | 'abstract' | 'interface' | 'enum'
 
+export const STEREOTYPES: { value: Stereotype; label: string }[] = [
+  { value: 'class',     label: 'class'     },
+  { value: 'abstract',  label: 'abstract'  },
+  { value: 'interface', label: 'interface' },
+  { value: 'enum',      label: 'enum'      },
+]
+
 export interface UmlClass {
   id: string
   elementType: 'uml-class'

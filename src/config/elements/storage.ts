@@ -17,5 +17,6 @@ export const storageConfig: ElementConfig = {
   },
   supportsMultiplicity: false,
   supportsProperties: true,
+  properties: { multiInstance: true },
   shape: 'pill',
 }

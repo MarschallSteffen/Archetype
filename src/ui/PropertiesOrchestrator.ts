@@ -9,8 +9,9 @@ import {
 } from './BulkPropertiesPanel.ts'
 import { getElementConfig } from '../config/registry.ts'
 import type { ElementKind } from '../types.ts'
+import type { Stereotype } from '../entities/UmlClass.ts'
 
-export type PatchFn = (patch: { multiInstance?: boolean; flowReversed?: boolean; accentColor?: string | undefined }) => void
+export type PatchFn = (patch: { multiInstance?: boolean; flowReversed?: boolean; accentColor?: string | undefined; stereotype?: Stereotype }) => void
 
 export class PropertiesOrchestrator {
   constructor(private deps: {
@@ -77,16 +78,18 @@ export class PropertiesOrchestrator {
         hideElementPropertiesPanel()
         hideBulkConnectionPanel()
 
-        const elemItems: Array<{ id: string; kind: string; multiInstance: boolean; supportsProperties: boolean; accentColor?: string }> = []
+        const elemItems: Array<{ id: string; kind: string; multiInstance: boolean; supportsMultiInstance: boolean; supportsStereotype: boolean; stereotype?: Stereotype; accentColor?: string }> = []
         for (const item of items) {
-          const found = store.findAnyElement(item.id) as (ReturnType<typeof store.findAnyElement> & { multiInstance?: boolean; accentColor?: string }) | undefined
+          const found = store.findAnyElement(item.id) as (ReturnType<typeof store.findAnyElement> & { multiInstance?: boolean; accentColor?: string; stereotype?: Stereotype }) | undefined
           if (!found) continue
-          const config = getElementConfig(found.elementType ?? item.kind)
+          const caps = getElementConfig(found.elementType ?? item.kind)?.properties ?? {}
           elemItems.push({
             id: item.id,
             kind: item.kind,
             multiInstance: (found as { multiInstance?: boolean }).multiInstance ?? false,
-            supportsProperties: config?.supportsProperties ?? false,
+            supportsMultiInstance: caps.multiInstance ?? false,
+            supportsStereotype: caps.stereotype ?? false,
+            stereotype: found.stereotype,
             accentColor: found.accentColor,
           })
         }
@@ -113,6 +116,13 @@ export class PropertiesOrchestrator {
             }
             store.endUndoGroup()
           },
+          (s) => {
+            store.beginUndoGroup()
+            for (const it of elemItems.filter(i => i.supportsStereotype)) {
+              updateFns[it.kind as ElementKind]?.(it.id)?.({ stereotype: s })
+            }
+            store.endUndoGroup()
+          },
         )
         return
       }
@@ -129,18 +139,21 @@ export class PropertiesOrchestrator {
 
     const item = items[0]
 
-    const found = store.findAnyElement(item.id) as (ReturnType<typeof store.findAnyElement> & { multiInstance?: boolean; flowReversed?: boolean; accentColor?: string }) | undefined
+    const found = store.findAnyElement(item.id) as (ReturnType<typeof store.findAnyElement> & { multiInstance?: boolean; flowReversed?: boolean; accentColor?: string; stereotype?: Stereotype }) | undefined
     if (!found) { hideElementPropertiesPanel(); return }
 
-    if (!getElementConfig(found.elementType ?? item.kind)?.supportsProperties) {
+    const cfg = getElementConfig(found.elementType ?? item.kind)
+    if (!cfg?.supportsProperties) {
       hideElementPropertiesPanel(); return
     }
 
+    const caps = cfg.properties ?? {}
     const elPosition = found.position
     const elSize = found.size
-    const multiInstance = 'multiInstance' in found ? (found.multiInstance ?? false) : undefined
+    const multiInstance = caps.multiInstance ? (found.multiInstance ?? false) : undefined
     const flowReversed = found.flowReversed
     const accentColor = found.accentColor
+    const stereotype = 'stereotype' in found ? found.stereotype : undefined
 
     const updateFn = updateFns[item.kind as ElementKind]?.(item.id)
     if (!updateFn) { hideElementPropertiesPanel(); return }
@@ -151,16 +164,17 @@ export class PropertiesOrchestrator {
     const screenX = svgRect.left + (elPosition.x + elSize.w) * vp.zoom + vp.x + 8
     const screenY = svgRect.top  + (elPosition.y + elSize.h / 2) * vp.zoom + vp.y
 
-    const isQueue = item.kind === 'queue'
     showElementPropertiesPanel(
       screenX,
       screenY,
       multiInstance,
       (val) => updateFn({ multiInstance: val }),
-      isQueue ? (flowReversed ?? false) : undefined,
-      isQueue ? (reversed) => updateFn({ flowReversed: reversed }) : undefined,
+      caps.flowReversed ? (flowReversed ?? false) : undefined,
+      caps.flowReversed ? (reversed) => updateFn({ flowReversed: reversed }) : undefined,
       accentColor,
       (color) => updateFn({ accentColor: color }),
+      caps.stereotype ? stereotype : undefined,
+      caps.stereotype ? (s) => updateFn({ stereotype: s }) : undefined,
     )
   }
 }

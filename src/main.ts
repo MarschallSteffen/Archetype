@@ -1097,6 +1097,16 @@ store.on(ev => {
   }
   if (ev.type === 'diagram:load')     rebuildAll()
 
+  // Auto-select new element and open properties panel
+  if (ev.type.endsWith(':add') && ev.type !== 'connection:add' && ev.type !== 'seq-diagram:add' && ev.type !== 'comment:add') {
+    const el = ev.payload as { id: string }
+    const kind = ev.type.replace(':add', '') as ElementKind
+    if (getElementConfig(store.findAnyElement(el.id)?.elementType ?? kind)?.supportsProperties) {
+      selection.select({ kind, id: el.id })
+      showPropertiesForSelection()
+    }
+  }
+
   // Close any open popover and properties panel when anything is removed
   const isRemove = ev.type.endsWith(':remove')
   if (isRemove) {

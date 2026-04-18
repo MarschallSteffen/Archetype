@@ -12,6 +12,7 @@ export const umlClassConfig: ElementConfig = {
   },
   supportsMultiplicity: true,
   supportsProperties: true,
+  properties: { multiInstance: true, stereotype: true },
 }
 
 export const umlPackageConfig: ElementConfig = {

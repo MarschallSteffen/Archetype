@@ -14,5 +14,6 @@ export const queueConfig: ElementConfig = {
   preferredConnectionType: 'plain',
   supportsMultiplicity: false,
   supportsProperties: true,
+  properties: { multiInstance: true, flowReversed: true },
   shape: 'pill',
 }

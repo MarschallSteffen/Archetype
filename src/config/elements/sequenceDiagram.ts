@@ -16,4 +16,5 @@ export const seqFragmentConfig: ElementConfig = {
   connectionRule: { asSource: [], asTarget: [] },
   supportsMultiplicity: false,
   supportsProperties: true,
+  properties: {},
 }

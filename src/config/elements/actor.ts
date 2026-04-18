@@ -12,6 +12,7 @@ export const agentConfig: ElementConfig = {
   preferredConnectionType: 'request',
   supportsMultiplicity: false,
   supportsProperties: true,
+  properties: { multiInstance: true },
 }
 
 export const humanAgentConfig: ElementConfig = {
@@ -25,4 +26,5 @@ export const humanAgentConfig: ElementConfig = {
   preferredConnectionType: 'request',
   supportsMultiplicity: false,
   supportsProperties: true,
+  properties: { multiInstance: true },
 }

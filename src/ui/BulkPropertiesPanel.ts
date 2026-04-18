@@ -8,6 +8,8 @@
 import type { ConnectionType, Multiplicity } from '../entities/Connection.ts'
 import { allowedConnectionTypes, ALL_TYPE_ICONS, MULTIPLICITIES } from './ConnectionPopover.ts'
 import type { ElementConfig } from '../config/ElementConfig.ts'
+import type { Stereotype } from '../entities/UmlClass.ts'
+import { STEREOTYPES } from '../entities/UmlClass.ts'
 import { createPopover } from './popover.ts'
 
 const ACCENT_COLORS = [
@@ -27,8 +29,11 @@ let currentElementDismiss: (() => void) | null = null
 
 export interface BulkElementItem {
   id: string
+  kind: string
   multiInstance: boolean
-  supportsProperties: boolean
+  supportsMultiInstance: boolean
+  supportsStereotype: boolean
+  stereotype?: Stereotype
   accentColor?: string
 }
 
@@ -38,15 +43,22 @@ export function showBulkElementPanel(
   items: BulkElementItem[],
   onMultiInstanceChange: (val: boolean) => void,
   onAccentColorChange: (color: string | undefined) => void,
+  onStereotypeChange?: (s: Stereotype) => void,
 ) {
   hideBulkElementPanel()
 
-  // multiInstance row: only if ALL items support properties
-  const allSupportProps = items.every(it => it.supportsProperties)
+  const allSupportMultiInstance = items.every(it => it.supportsMultiInstance)
+  const allSupportStereotype    = items.every(it => it.supportsStereotype)
+
   const allTrue = items.every(it => it.multiInstance)
   const isIndeterminate = !allTrue && items.some(it => it.multiInstance)
 
-  const multiRow = allSupportProps ? `
+  const firstStereotype = items[0].stereotype
+  const sharedStereotype: Stereotype | null = allSupportStereotype && items.every(it => it.stereotype === firstStereotype)
+    ? (firstStereotype ?? null)
+    : null
+
+  const multiRow = allSupportMultiInstance ? `
     <div class="popover-row">
       <label class="props-label">
         <input type="checkbox" id="bulk-ep-multi" ${allTrue ? 'checked' : ''}/>
@@ -55,7 +67,12 @@ export function showBulkElementPanel(
     </div>
   ` : ''
 
-  // Accent color: active when all share the same color, otherwise no pre-selection
+  const stereotypeRow = allSupportStereotype ? `
+    <div class="popover-section-label">Stereotype</div>
+    <div class="popover-row" id="bulk-ep-stereotype-row"></div>
+  ` : ''
+
+  // Accent color: active when all share the same color
   const firstColor = items[0].accentColor
   const sharedColor = items.every(it => it.accentColor === firstColor) ? firstColor : undefined
 
@@ -64,6 +81,7 @@ export function showBulkElementPanel(
 
   panel.innerHTML = `
     <div class="popover-section-label">Multiple selection (${items.length})</div>
+    ${stereotypeRow}
     ${multiRow}
     <div class="popover-row accent-row">
       <span class="accent-label">Accent color</span>
@@ -71,7 +89,25 @@ export function showBulkElementPanel(
     </div>
   `
 
-  if (allSupportProps) {
+  if (allSupportStereotype && onStereotypeChange) {
+    const row = panel.querySelector<HTMLElement>('#bulk-ep-stereotype-row')!
+    for (const { value, label } of STEREOTYPES) {
+      const btn = document.createElement('button')
+      btn.classList.add('conn-type-btn', 'conn-type-btn--text')
+      if (sharedStereotype === value) btn.classList.add('active')
+      btn.title = label
+      btn.textContent = label
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        row.querySelectorAll('.conn-type-btn').forEach(b => b.classList.remove('active'))
+        btn.classList.add('active')
+        onStereotypeChange(value)
+      })
+      row.appendChild(btn)
+    }
+  }
+
+  if (allSupportMultiInstance) {
     const checkbox = panel.querySelector<HTMLInputElement>('#bulk-ep-multi')!
     checkbox.indeterminate = isIndeterminate
     checkbox.addEventListener('change', e => {

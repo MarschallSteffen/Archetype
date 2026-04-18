@@ -2,9 +2,12 @@
  * Floating properties panel shown when a single element is selected.
  * Exposes the "Multiple instances" toggle and, for queues, a flow-direction toggle.
  * Also exposes an "Accent color" picker row with 8 Catppuccin color swatches.
+ * For UML classes, exposes a stereotype selector.
  * Positioned and dismissed consistently with Connection/Message popovers.
  */
 
+import type { Stereotype } from '../entities/UmlClass.ts'
+import { STEREOTYPES } from '../entities/UmlClass.ts'
 import { createPopover } from './popover.ts'
 
 const ACCENT_COLORS = [
@@ -29,6 +32,8 @@ export function showElementPropertiesPanel(
   onFlowReversed?: (reversed: boolean) => void,
   accentColor?: string,
   onAccentColor?: (color: string | undefined) => void,
+  stereotype?: Stereotype,
+  onStereotype?: (s: Stereotype) => void,
 ) {
   hideElementPropertiesPanel()
 
@@ -50,10 +55,16 @@ export function showElementPropertiesPanel(
     </div>
   ` : ''
 
+  const stereotypeRow = onStereotype != null ? `
+    <div class="popover-section-label">Stereotype</div>
+    <div class="popover-row" id="ep-stereotype-row"></div>
+  ` : ''
+
   const { el: panel, dismiss } = createPopover('elem-props-panel', ['elem-props-panel'], screenX, screenY)
   currentDismiss = dismiss
 
   panel.innerHTML = `
+    ${stereotypeRow}
     ${multiRow}
     ${flowRow}
     <div class="popover-row accent-row">
@@ -61,6 +72,24 @@ export function showElementPropertiesPanel(
       <div class="accent-swatches" id="ep-accent-swatches"></div>
     </div>
   `
+
+  if (onStereotype != null) {
+    const row = panel.querySelector<HTMLElement>('#ep-stereotype-row')!
+    for (const { value, label } of STEREOTYPES) {
+      const btn = document.createElement('button')
+      btn.classList.add('conn-type-btn', 'conn-type-btn--text')
+      if (stereotype === value) btn.classList.add('active')
+      btn.title = label
+      btn.textContent = label
+      btn.addEventListener('click', e => {
+        e.stopPropagation()
+        row.querySelectorAll('.conn-type-btn').forEach(b => b.classList.remove('active'))
+        btn.classList.add('active')
+        onStereotype(value)
+      })
+      row.appendChild(btn)
+    }
+  }
 
   if (multiInstance !== undefined) {
     panel.querySelector<HTMLInputElement>('#ep-multi')!.addEventListener('change', e => {
