@@ -852,6 +852,7 @@ const propsOrch = new PropertiesOrchestrator({
     'state':        id => p => store.updateState(id, p),
     'seq-fragment': id => p => store.updateCombinedFragment(id, p),
   } satisfies Partial<Record<ElementKind, (id: string) => PatchFn>>,
+  getRenderedSizeById: getRenderedSizeById,
 })
 
 function showPropertiesForSelection() { propsOrch.show() }
@@ -898,13 +899,19 @@ function wireElementInteraction(
   el.addEventListener('mousedown', e => {
     if (connect.isConnecting) return
     if (toolbar.activeTool === 'pan') return
+    
+    const target = e.target as Element
+    const isVisiblePort = target.classList.contains('port')
+    const isPortHit = target.classList.contains('port-hit')
+
     // Suppress resize when multiple elements are selected — only drag-move is allowed
     const multiSelected = selection.items.length > 1 && selection.isSelected(id)
     if (!multiSelected) {
       const { x, y, w, h } = getElData()
       const elData = { kind, id, x, y, w, h, ...(elementShape(kind) === 'pill' ? { ewZone: h / 2 } : {}) }
       const resizeHit = resize.hitTest(e, [elData])
-      if (resizeHit) {
+      // Only allow resize if we are NOT clicking exactly on the visible port
+      if (resizeHit && !isVisiblePort) {
         if (noVerticalResize && (resizeHit.edge === 'n' || resizeHit.edge === 's')) {
           // Fall through to drag
         } else {
@@ -914,6 +921,13 @@ function wireElementInteraction(
         }
       }
     }
+
+    // If the click is meant for a port (and not grabbed by resize above),
+    // let it pass through to the port's own event listener.
+    if (isVisiblePort || isPortHit) {
+      return
+    }
+
     e.stopPropagation()
     // If the element is already part of a multi-selection and shift is not held,
     // don't re-select (which would collapse to single) — just start the drag.
@@ -923,7 +937,7 @@ function wireElementInteraction(
       selection.select({ kind, id }, e.shiftKey)
       drag.startDrag({ kind, id }, e, selection.items)
     }
-  })
+  }, { capture: true })
 
   el.addEventListener('dblclick', e => {
     const target = e.target as Element
@@ -1128,19 +1142,21 @@ store.on(ev => {
     refreshSequenceConnections()
   }
 
-  saveDiagram(store.state)
-  fileMenu.notifySaved()
-  // Keep recent files entry in sync with latest diagram state
-  const d = store.state
-  if (d.id) {
-    const snapshot = JSON.stringify(serializeDiagramV2(d), null, 2)
-    addRecentFile({
-      id: d.id,
-      name: d.name || 'Untitled',
-      filename: getActiveFileName(),
-      timestamp: Date.now(),
-      data: snapshot,
-    })
+  if (ev.type !== 'viewport:update') {
+    saveDiagram(store.state)
+    fileMenu.notifySaved()
+    // Keep recent files entry in sync with latest diagram state
+    const d = store.state
+    if (d.id) {
+      const snapshot = JSON.stringify(serializeDiagramV2(d), null, 2)
+      addRecentFile({
+        id: d.id,
+        name: d.name || 'Untitled',
+        filename: getActiveFileName(),
+        timestamp: Date.now(),
+        data: snapshot,
+      })
+    }
   }
 })
 

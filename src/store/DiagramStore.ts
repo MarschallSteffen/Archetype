@@ -160,7 +160,8 @@ export class DiagramStore {
   get isUndoGroupActive() { return this._undoGroupActive }
 
   private pushUndoSnapshot() {
-    this.undoStack.push(JSON.parse(JSON.stringify(this.diagram)) as Diagram)
+    const snap = JSON.parse(JSON.stringify(this.diagram)) as Diagram
+    this.undoStack.push(snap)
     if (this.undoStack.length > MAX_UNDO) this.undoStack.shift()
     this.redoStack = []
     this.emit('history:change')
@@ -170,7 +171,9 @@ export class DiagramStore {
     const snapshot = this.undoStack.pop()
     if (!snapshot) return
     this.redoStack.push(JSON.parse(JSON.stringify(this.diagram)) as Diagram)
+    const currentViewport = this.diagram.viewport
     this.diagram = snapshot
+    this.diagram.viewport = currentViewport
     this.ensureNewFields()
     this.rebindManagers()
     this.emit('diagram:load', this.diagram)
@@ -181,7 +184,9 @@ export class DiagramStore {
     const snapshot = this.redoStack.pop()
     if (!snapshot) return
     this.undoStack.push(JSON.parse(JSON.stringify(this.diagram)) as Diagram)
+    const currentViewport = this.diagram.viewport
     this.diagram = snapshot
+    this.diagram.viewport = currentViewport
     this.ensureNewFields()
     this.rebindManagers()
     this.emit('diagram:load', this.diagram)

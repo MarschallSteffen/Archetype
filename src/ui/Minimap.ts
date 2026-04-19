@@ -173,15 +173,100 @@ export class Minimap {
       if (!arr) continue
       const color = COLLECTION_COLORS[col] ?? 'var(--ctp-overlay2)'
       for (const el of arr) {
-        const r = svgEl('rect')
-        r.setAttribute('x', String(toMiniX(el.position.x)))
-        r.setAttribute('y', String(toMiniY(el.position.y)))
-        r.setAttribute('width', String(Math.max(2, el.size.w * scale)))
-        r.setAttribute('height', String(Math.max(2, el.size.h * scale)))
-        r.setAttribute('fill', color)
-        r.setAttribute('rx', '1')
-        r.classList.add('minimap-el-rect')
-        this.elementsGroup.appendChild(r)
+        const x = toMiniX(el.position.x)
+        const y = toMiniY(el.position.y)
+        const w = Math.max(2, el.size.w * scale)
+        const h = Math.max(2, el.size.h * scale)
+        const elType = (el as any).elementType
+
+        // Base group for complex shapes or single element
+        const g = svgEl('g')
+
+        if (col === 'useCases') {
+          const ellipse = svgEl('ellipse')
+          ellipse.setAttribute('cx', String(x + w / 2))
+          ellipse.setAttribute('cy', String(y + h / 2))
+          ellipse.setAttribute('rx', String(w / 2))
+          ellipse.setAttribute('ry', String(h / 2))
+          ellipse.setAttribute('fill', color)
+          g.appendChild(ellipse)
+        } else if (col === 'queues') {
+          const r = svgEl('rect')
+          r.setAttribute('x', String(x))
+          r.setAttribute('y', String(y))
+          r.setAttribute('width', String(w))
+          r.setAttribute('height', String(h))
+          r.setAttribute('fill', color)
+          r.setAttribute('rx', String(h / 2))
+          r.setAttribute('ry', String(h / 2))
+          g.appendChild(r)
+        } else if (col === 'startStates' || col === 'endStates') {
+          const radius = Math.min(w, h) / 2
+          const cx = x + w / 2
+          const cy = y + h / 2
+          const circle = svgEl('circle')
+          circle.setAttribute('cx', String(cx))
+          circle.setAttribute('cy', String(cy))
+          circle.setAttribute('r', String(radius))
+          circle.setAttribute('fill', color)
+          g.appendChild(circle)
+
+          if (col === 'endStates') {
+            const inner = svgEl('circle')
+            inner.setAttribute('cx', String(cx))
+            inner.setAttribute('cy', String(cy))
+            inner.setAttribute('r', String(radius * 0.6))
+            inner.setAttribute('fill', 'var(--ctp-crust)')
+            g.appendChild(inner)
+          }
+        } else if (col === 'actors' && (elType === 'human-agent' || elType === 'uc-actor')) {
+          const cx = x + w / 2
+          const figureH = h * 0.70
+          const headR = Math.min(figureH * 0.18, 12 * scale)
+          const headCy = y + headR + 4 * scale
+          const shoulderY = headCy + headR + 2 * scale
+          const hipY = shoulderY + figureH * 0.25
+          const footY = hipY + figureH * 0.30
+          const armSpan = Math.min(w, h) * 0.28
+
+          const head = svgEl('circle')
+          head.setAttribute('cx', String(cx))
+          head.setAttribute('cy', String(headCy))
+          head.setAttribute('r', String(headR))
+          head.setAttribute('fill', 'none')
+          head.setAttribute('stroke', color)
+          head.setAttribute('stroke-width', String(Math.max(1, 2 * scale)))
+          g.appendChild(head)
+
+          const path = svgEl('path')
+          let d = `M${cx},${headCy + headR} L${cx},${hipY} ` 
+          d += `M${cx - armSpan},${shoulderY + 4 * scale} L${cx + armSpan},${shoulderY + 4 * scale} ` 
+          d += `M${cx},${hipY} L${cx - armSpan * 0.7},${footY} ` 
+          d += `M${cx},${hipY} L${cx + armSpan * 0.7},${footY}`
+          path.setAttribute('d', d)
+          path.setAttribute('fill', 'none')
+          path.setAttribute('stroke', color)
+          path.setAttribute('stroke-width', String(Math.max(1, 2 * scale)))
+          g.appendChild(path)
+        } else {
+          // Default rect (for classes, packages, storages, states, agent actors, sequences)
+          const r = svgEl('rect')
+          r.setAttribute('x', String(x))
+          r.setAttribute('y', String(y))
+          r.setAttribute('width', String(w))
+          r.setAttribute('height', String(h))
+          r.setAttribute('fill', color)
+          
+          let rx = '1'
+          if (col === 'states') rx = String(12 * scale)
+          else if (col === 'actors' && elType === 'agent') rx = String(4 * scale)
+          
+          r.setAttribute('rx', rx)
+          g.appendChild(r)
+        }
+        
+        g.classList.add('minimap-el-shape')
+        this.elementsGroup.appendChild(g)
       }
     }
 

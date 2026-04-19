@@ -71,7 +71,8 @@ export class PackageRenderer {
   update(entity: PackageLikeEntity) {
     this.entity = entity
     const { position: { x, y }, size: { w, h } } = entity
-    this.computedW = Math.max(w, MIN_W)
+    const minW = Math.max(MIN_W, estimateTextWidth(entity.name) + TAB_PAD * 2 + 10)
+    this.computedW = Math.max(w, minW)
     this.computedH = Math.max(h, MIN_H)
 
     this.el.setAttribute('transform', `translate(${x},${y})`)
@@ -101,7 +102,9 @@ export class PackageRenderer {
   }
 
   getRenderedSize() { return { w: this.computedW, h: this.computedH } }
-  getContentMinSize() { return { w: MIN_W, h: MIN_H } }
+  getContentMinSize() { 
+    return { w: Math.max(MIN_W, estimateTextWidth(this.entity.name) + TAB_PAD * 2 + 10), h: MIN_H } 
+  }
   setSelected(selected: boolean) { this.el.classList.toggle('selected', selected) }
   destroy() { this._unsub(); this.el.remove() }
 }

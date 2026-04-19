@@ -40,6 +40,7 @@ export function renderPortsInto(
     hit.setAttribute('r', String(PORT_HIT_R))
     hit.setAttribute('fill', 'transparent')
     hit.setAttribute('stroke', 'none')
+    hit.style.cursor = 'crosshair'
     hit.dataset.port = side
     hit.addEventListener('mousedown', e => {
       e.stopPropagation()
@@ -49,6 +50,7 @@ export function renderPortsInto(
     const circle = svgEl('circle')
     circle.classList.add('port')
     circle.setAttribute('r', String(PORT_R))
+    circle.style.cursor = 'crosshair'
     circle.dataset.port = side
     circle.addEventListener('mousedown', e => {
       e.stopPropagation()

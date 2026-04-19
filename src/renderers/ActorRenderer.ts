@@ -109,7 +109,7 @@ export class ActorRenderer {
     const shoulderY = headCy + headR + 2
     const hipY = shoulderY + figureH * 0.25
     const footY = hipY + figureH * 0.30
-    const armSpan = w * 0.28
+    const armSpan = Math.min(w, h) * 0.28
 
     const head = svgEl('circle')
     head.classList.add('actor-figure')

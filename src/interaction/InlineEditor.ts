@@ -24,16 +24,36 @@ export class InlineEditor {
     const bbox = textEl.getBBox()
     if (wasEmpty) textEl.textContent = ''
 
-    const fo = svgEl('foreignObject')
-    fo.setAttribute('x', String(bbox.x - 4))
-    fo.setAttribute('y', String(bbox.y - 2))
-    fo.setAttribute('width', String(Math.max(bbox.width + 16, 120)))
-    fo.setAttribute('height', String(Math.max(bbox.height + 8, 24)))
+    let foWidth = Math.max(bbox.width + 16, 120)
+    let foX = bbox.x - 4
+    const isCentered = textEl.getAttribute('text-anchor') === 'middle' || window.getComputedStyle(textEl).textAnchor === 'middle'
 
     const input = document.createElement('input')
     input.type = 'text'
     input.value = initialValue
     input.classList.add('inline-input')
+
+    if (isCentered) {
+      const anchorX = Number(textEl.getAttribute('x')) || 0
+      if (anchorX) {
+        const rootG = textEl.closest('[data-id]') as SVGGElement | null
+        const isLocalCoord = rootG?.hasAttribute('transform')
+        
+        if (isLocalCoord) {
+          // Constrain to the visible shape bounds so it never spills over natively small entities like queue/state
+          const visualWidth = anchorX * 2
+          foWidth = Math.min(foWidth, Math.max(visualWidth - 8, 40))
+        }
+        foX = anchorX - foWidth / 2
+      }
+      input.style.textAlign = 'center'
+    }
+
+    const fo = svgEl('foreignObject')
+    fo.setAttribute('x', String(foX))
+    fo.setAttribute('y', String(bbox.y - 2))
+    fo.setAttribute('width', String(foWidth))
+    fo.setAttribute('height', String(Math.max(bbox.height + 8, 24)))
 
     fo.appendChild(input)
     textEl.parentElement?.appendChild(fo)

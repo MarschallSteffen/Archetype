@@ -548,7 +548,6 @@ export function serializeDiagramV2(diagram: Diagram): unknown {
     name: diagram.name,
     elements,
     connections,
-    viewport: diagram.viewport,
   }
 }
 

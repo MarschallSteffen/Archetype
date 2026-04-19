@@ -19,6 +19,7 @@ export class PropertiesOrchestrator {
     selection: SelectionManager
     svg: SVGSVGElement
     updateFns: Partial<Record<ElementKind, (id: string) => PatchFn>>
+    getRenderedSizeById?: (id: string) => { w: number; h: number } | undefined
   }) {}
 
   show(): void {
@@ -149,7 +150,7 @@ export class PropertiesOrchestrator {
 
     const caps = cfg.properties ?? {}
     const elPosition = found.position
-    const elSize = found.size
+    const elSize = this.deps.getRenderedSizeById?.(item.id) ?? found.size
     const multiInstance = caps.multiInstance ? (found.multiInstance ?? false) : undefined
     const flowReversed = found.flowReversed
     const accentColor = found.accentColor

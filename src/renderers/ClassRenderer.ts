@@ -94,11 +94,17 @@ export class ClassRenderer {
 
   update(cls: UmlClass) {
     const { position: { x, y }, size: { w } } = cls
-    // Width: max of stored user size, MIN_W, and name text estimate
-    this.computedW = Math.max(w, MIN_W, estimateTextWidth(cls.name))
-
+    
     const attrLines   = cls.attributes.map(serializeAttribute)
     const methodLines = cls.methods.map(serializeMethod)
+
+    // Width: max of stored user size, MIN_W, and name/member text estimate
+    const maxTextW = Math.max(
+      estimateTextWidth(cls.name) + 40,
+      ...attrLines.map(l => estimateTextWidth(l) + 24),
+      ...methodLines.map(l => estimateTextWidth(l) + 24)
+    )
+    this.computedW = Math.max(w, MIN_W, maxTextW)
 
     // Heights
     const attrSectionH   = SECTION_LABEL_H + attrLines.length * ROW_H + ROW_H   // label + rows + add-btn
@@ -184,7 +190,15 @@ export class ClassRenderer {
   getRenderedSize() { return { w: this.computedW, h: this.computedH } }
 
   getContentMinSize() {
-    return { w: Math.max(MIN_W, estimateTextWidth(this.cls.name)), h: this.computedH }
+    const attrLines   = this.cls.attributes.map(serializeAttribute)
+    const methodLines = this.cls.methods.map(serializeMethod)
+
+    const maxTextW = Math.max(
+      estimateTextWidth(this.cls.name) + 40,
+      ...attrLines.map(l => estimateTextWidth(l) + 24),
+      ...methodLines.map(l => estimateTextWidth(l) + 24)
+    )
+    return { w: Math.max(MIN_W, maxTextW), h: this.computedH }
   }
 
   setSelected(selected: boolean) {
