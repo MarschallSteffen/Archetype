@@ -18,7 +18,6 @@ import type { Connection, ConnectionType, ElbowMode, Multiplicity } from '../ent
 import { parseAttribute, serializeAttribute } from '../entities/Attribute.ts'
 import { parseMethod, serializeMethod } from '../entities/Method.ts'
 import { getElementConfig } from '../config/registry.ts'
-import { extractPngiTxt } from './png-chunks.ts'
 import { getExportBounds, prepareSvgForExport, collectStyles } from './svg-export.ts'
 export { getExportBounds, prepareSvgForExport, collectStyles } from './svg-export.ts'
 import {
@@ -120,7 +119,6 @@ export async function openAndSaveToFile(
 
 // ─── .arch.svg — SVG with embedded diagram JSON ──────────────────────────────
 
-const ARCH_KEYWORD = 'archetype-diagram'
 const ARCH_META_TAG = 'archetype-diagram'
 
 /**
@@ -150,7 +148,7 @@ function escapeXml(str: string): string {
 
 /**
  * Read diagram JSON from a FileSystemFileHandle.
- * Handles .arch.svg (extracts embedded metadata), legacy .arch.png, and .json files.
+ * Handles .arch.svg (extracts embedded metadata) and .json files.
  * Returns the raw JSON string, or null if the file is not a valid diagram.
  */
 export async function readDiagramJsonFromHandle(
@@ -160,10 +158,6 @@ export async function readDiagramJsonFromHandle(
   if (file.name.endsWith('.arch.svg') || file.name.endsWith('.svg')) {
     const text = await file.text()
     return extractSvgMetadataJson(text)
-  }
-  if (file.name.endsWith('.arch.png') || file.name.endsWith('.png')) {
-    const buf = await file.arrayBuffer()
-    return extractPngiTxt(new Uint8Array(buf), ARCH_KEYWORD)
   }
   return file.text()
 }
@@ -332,7 +326,7 @@ export async function loadDiagramFromFile(
         showOpenFilePicker: (opts?: unknown) => Promise<FileSystemFileHandle[]>
       }).showOpenFilePicker({
         types: [
-          { description: 'Diagram files', accept: { 'application/json': ['.json'], 'image/svg+xml': ['.svg'], 'image/png': ['.png'] } },
+          { description: 'Diagram files', accept: { 'application/json': ['.json'], 'image/svg+xml': ['.svg'] } },
         ],
         multiple: false,
       })
@@ -349,15 +343,6 @@ export async function loadDiagramFromFile(
         const json = extractSvgMetadataJson(text)
         if (!json) { alert('This SVG does not contain an embedded diagram.'); return }
         const raw = JSON.parse(json)
-        activeFileHandle = writeHandle
-        onLoad(deserializeV2(raw), handle, json)
-      } else if (file.name.endsWith('.arch.png') || file.name.endsWith('.png')) {
-        const buf  = await file.arrayBuffer()
-        const json = extractPngiTxt(new Uint8Array(buf), ARCH_KEYWORD)
-        if (!json) { alert('This PNG does not contain an embedded diagram.'); return }
-        const raw = JSON.parse(json)
-        // Always store the original handle (for IndexedDB / recent files).
-        // activeFileHandle uses the write-verified handle — null if write access denied.
         activeFileHandle = writeHandle
         onLoad(deserializeV2(raw), handle, json)
       } else {
@@ -377,7 +362,7 @@ export async function loadDiagramFromFile(
   // Fallback: <input type="file"> — no writable handle
   const input = document.createElement('input')
   input.type = 'file'
-  input.accept = '.json,application/json,.arch.svg,.svg,image/svg+xml,.arch.png,.png,image/png'
+  input.accept = '.json,application/json,.arch.svg,.svg,image/svg+xml'
   input.addEventListener('change', () => {
     const file = input.files?.[0]
     if (!file) return
@@ -394,19 +379,6 @@ export async function loadDiagramFromFile(
         }
       }
       reader.readAsText(file)
-    } else if (file.name.endsWith('.arch.png') || file.name.endsWith('.png')) {
-      const reader = new FileReader()
-      reader.onload = () => {
-        try {
-          const buf  = reader.result as ArrayBuffer
-          const json = extractPngiTxt(new Uint8Array(buf), ARCH_KEYWORD)
-          if (!json) { alert('This PNG does not contain an embedded diagram.'); return }
-          onLoad(deserializeV2(JSON.parse(json)), null, json)
-        } catch {
-          alert('Could not read diagram from PNG.')
-        }
-      }
-      reader.readAsArrayBuffer(file)
     } else {
       const reader = new FileReader()
       reader.onload = () => {

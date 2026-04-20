@@ -104,7 +104,6 @@ src/
     CollectionManager.ts  # Generic CollectionManager<T> — add/update/remove/findById/getAll
   serialization/
     persistence.ts   # JSON save/load, file handle management, PNG export orchestration
-    png-chunks.ts    # Pure utilities: crc32, injectPngiTxt, extractPngiTxt (no DOM/store)
     svg-export.ts    # SVG export preprocessing: getExportBounds, prepareSvgForExport, collectStyles
     ThumbnailCache.ts  # In-memory blob-URL thumbnail cache keyed by diagram ID
     PngAutosave.ts   # Debounced PNG autosave scheduler; accepts doWrite callback (avoids circular deps)

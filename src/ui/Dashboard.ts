@@ -145,8 +145,8 @@ export class Dashboard {
       const perm = await (handle as any).queryPermission({ mode: 'read' })
       if (perm !== 'granted') return
       const blob = await handle.getFile()
-      // Only show if it's an arch.png
-      if (!blob.name.endsWith('.png')) return
+      // Only show if it's an image or svg (thumbnails are stored as PNG data URLs in memory, but source files are SVG/JSON)
+      if (!blob.name.endsWith('.svg') && !blob.name.endsWith('.png') && !blob.name.endsWith('.json')) return
       const url = URL.createObjectURL(blob)
       this.setThumbImage(thumbEl, url)
     } catch { /* no thumbnail — keep placeholder */ }
@@ -171,7 +171,7 @@ export class Dashboard {
         if (handle) {
           // Request write permission — may show a small browser prompt, not a full picker.
           const writeHandle = await _acquireWriteHandle(handle)
-          // Read diagram content (handles both .arch.png and .json)
+          // Read diagram content (handles both .arch.svg and .json)
           const text = await _readDiagramJson(handle)
           if (text) {
             const parsed = JSON.parse(text)

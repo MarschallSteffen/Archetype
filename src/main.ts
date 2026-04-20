@@ -141,7 +141,7 @@ const fileMenuCallbacks = {
   onSaveAs: () => {
     const d = store.state
     const name = fileMenu.getTitle() || 'diagram'
-    openAndSaveToFile(d, `${name}.arch.png`, /* forceNew */ true).then(result => {
+    openAndSaveToFile(d, `${name}.arch.svg`, /* forceNew */ true).then(result => {
       if (!result) return  // cancelled
       setActiveThumbnailId(d.id)
       fileMenu.setFileIndicator(getActiveFileName())
