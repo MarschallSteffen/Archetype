@@ -695,14 +695,7 @@ function wireCommentInteraction(r: CommentRenderer, comment: Comment) {
   })
   r.el.addEventListener('mouseleave', () => {
     if (drag.isDragging) return
-    // Only clear if it's NOT pinned; if it's pinned, update() will handle showing the official line
-    const c = store.state.comments.find(item => item.id === comment.id)
-    if (!c?.pinnedTo) {
-      r.setDragPinPreview(null)
-    } else {
-      // Re-trigger update to show official line
-      r.update(c)
-    }
+    r.setDragPinPreview(null)
   })
 }
 
@@ -762,7 +755,7 @@ function updateAllCommentPinPreviews() {
     const r = commentRenderers.get(c.id) as CommentRenderer
     if (!r) continue
     const hit = findClosestPinTarget(c)
-    r.setDragPinPreview(hit ? { x: hit.el.position.x, y: hit.el.position.y, w: hit.el.size.w, h: hit.el.size.h, shape: elementShape(hit.el.elementType ?? hit.kind) } : null)
+    r.setDragPinPreview(hit ? { x: hit.el.position.x, y: hit.el.position.y, w: hit.el.size.w, h: hit.el.size.h, shape: elementShape(hit.el.elementType ?? hit.kind) } : null, true)
   }
 }
 

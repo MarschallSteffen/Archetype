@@ -107,7 +107,7 @@ export class CommentRenderer {
     // clipPath must be in a <defs> inside the element's group
     const defs = svgEl('defs')
     defs.appendChild(clipPath)
-    this.el.append(defs, this.pinLine, this.bg, this.dogear, this.dogearFold, this.fo)
+    this.el.append(defs, this.bg, this.pinLine, this.dogear, this.dogearFold, this.fo)
 
     this.update(comment)
 
@@ -210,9 +210,13 @@ export class CommentRenderer {
   }
 
   /** Show/hide a live pin-line preview during drag (target coords in canvas space, or null to hide) */
-  setDragPinPreview(targetPos: { x: number; y: number; w: number; h: number; shape?: string } | null) {
+  setDragPinPreview(targetPos: { x: number; y: number; w: number; h: number; shape?: string } | null, isDragActive = false) {
     if (!targetPos) {
-      this.pinLine.style.display = 'none'
+      if (isDragActive) {
+        this.pinLine.style.display = 'none'
+      } else {
+        this.update(this.comment)
+      }
       return
     }
     const { w, h } = this.comment.size
