@@ -1,7 +1,6 @@
 import { getElementConfig } from '../config/registry.ts'
-import type { ElementKind } from '../types.ts'
 
-export function elementShape(kind: ElementKind): string {
+export function elementShape(kind: string): string {
   return getElementConfig(kind)?.shape ?? 'rect'
 }
 

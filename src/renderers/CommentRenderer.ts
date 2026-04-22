@@ -185,7 +185,7 @@ export class CommentRenderer {
       const target = this.store.findAnyElement(comment.pinnedTo)
       if (target) {
         const et = target.elementType ?? ''
-        const shape = elementShape(et as any)
+        const shape = elementShape(et)
         const renderedSize = this.getRenderedSizeById?.(target.id) ?? target.size
         this.setPinLine(x, y, w, h, { x: target.position.x, y: target.position.y, w: renderedSize.w, h: renderedSize.h, shape })
       } else {
